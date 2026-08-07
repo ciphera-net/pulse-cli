@@ -23,11 +23,18 @@ func newRealtimeCmd(app *App) *cobra.Command {
 			"describes one person's current session.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			siteID, label, err := app.resolveSite(cmd.Context())
+			// * Credential BEFORE site, deliberately.
+			// *
+			// * A user who has never authenticated also has no default site, and
+			// * resolving the site first told them to run `pulse sites use` —
+			// * which cannot work, because listing sites needs a credential. It
+			// * also exited 2 where the honest answer is 3. Found by the CI smoke
+			// * step running the real binary in a container with neither.
+			c, err := app.apiClient()
 			if err != nil {
 				return err
 			}
-			c, err := app.apiClient()
+			siteID, label, err := app.resolveSite(cmd.Context())
 			if err != nil {
 				return err
 			}

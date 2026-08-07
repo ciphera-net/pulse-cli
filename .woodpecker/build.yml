@@ -58,12 +58,29 @@ steps:
           /tmp/pulse $cmd --help > /dev/null || { echo "FAILED: pulse $cmd --help"; exit 1; }
           echo "ok  pulse $cmd --help"
         done
-      # * Unauthenticated must exit 3, not 1. The exit table is a published
-      # * contract and this is the one code a script is most likely to branch on.
+      # * Unauthenticated must exit 3 on EVERY command that reads.
+      # *
+      # * This step earns its place: it caught two real defects that no unit test
+      # * could. This container has no keychain and no config file, which is both
+      # * the CI case the tool is meant to serve and a state a developer's macOS
+      # * box never reaches.
+      # *
+      # *   1. go-keyring fails here with "dbus-launch: executable file not
+      # *      found", which the CLI reported as an internal error (exit 1).
+      # *   2. With no config there is also no default site, and the commands
+      # *      resolved the site BEFORE the credential — so they answered "run
+      # *      `pulse sites use`", which cannot work without a credential, and
+      # *      exited 2 where the honest answer is 3.
+      # *
+      # * Every read command is covered rather than one, because the ordering bug
+      # * was per-command and a single sample would have missed two of three.
       - |
         set +e
-        PULSE_API_KEY="" /tmp/pulse stats --last 7d >/dev/null 2>&1
-        code=$?
-        set -e
-        [ "$code" = "3" ] || { echo "unauthenticated exited $code, want 3"; exit 1; }
-        echo "ok  unauthenticated exits 3"
+        fail=0
+        for c in "stats --last 7d" "realtime" "export daily --last 7d" "export pages --last 7d" "sites ls" "auth status"; do
+          PULSE_API_KEY="" /tmp/pulse $c >/dev/null 2>&1
+          code=$?
+          if [ "$code" = "3" ]; then echo "ok  unauthenticated \`pulse $c\` exits 3"
+          else echo "FAILED: unauthenticated \`pulse $c\` exited $code, want 3"; fail=1; fi
+        done
+        [ "$fail" = "0" ] || exit 1
