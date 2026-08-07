@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,7 +145,7 @@ func TestSecondRateLimitFailsWithExit5(t *testing.T) {
 		t.Fatal("two 429s in a row must fail")
 	}
 	var apiErr *APIError
-	if !asAPIError(err, &apiErr) {
+	if !errors.As(err, &apiErr) {
 		t.Fatalf("want an *APIError after exactly one retry, got %T (%v) — "+
 			"a deadline here means the client kept retrying instead of giving up", err, err)
 	}

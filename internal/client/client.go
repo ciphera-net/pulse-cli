@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,7 +103,7 @@ func (c *Client) do(ctx context.Context, path string, query url.Values, accept s
 	body, header, err := c.attempt(ctx, path, query, accept)
 
 	var apiErr *APIError
-	if err != nil && asAPIError(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
+	if err != nil && errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
 		wait := time.Duration(apiErr.RetryAfter) * time.Second
 		if wait <= 0 {
 			wait = time.Second
@@ -174,21 +175,4 @@ func parseRetryAfter(v string) int {
 		return 0
 	}
 	return n
-}
-
-// asAPIError is errors.As specialised to *APIError, kept here so the retry path
-// reads as one condition.
-func asAPIError(err error, target **APIError) bool {
-	for err != nil {
-		if e, ok := err.(*APIError); ok {
-			*target = e
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
 }

@@ -115,7 +115,7 @@ func report(p *render.Printer, err error, started bool) int {
 	}
 
 	var apiErr *client.APIError
-	if errorsAs(err, &apiErr) {
+	if errors.As(err, &apiErr) {
 		fmt.Fprintf(p.Err, "%s %s\n", mark(p), apiErr.Error())
 		if hint := hintFor(apiErr); hint != "" {
 			fmt.Fprintf(p.Err, "  %s\n", p.Dim(hint))
@@ -124,7 +124,7 @@ func report(p *render.Printer, err error, started bool) int {
 	}
 
 	var ce *cliError
-	if errorsAs(err, &ce) {
+	if errors.As(err, &ce) {
 		fmt.Fprintf(p.Err, "%s %s\n", mark(p), ce.msg)
 		return ce.code
 	}
@@ -272,7 +272,7 @@ func notAuthenticated(cause error) error {
 		"  or export " + credentials.EnvVar + " for a CI environment."
 
 	var unavailable *credentials.UnavailableError
-	if errorsAs(cause, &unavailable) {
+	if errors.As(cause, &unavailable) {
 		// * The reason already reads as a sentence ("could not read the system
 		// * keychain: …"), so it is appended bare rather than introduced again.
 		msg += "\n\n  " + unavailable.Reason.Error()
@@ -290,20 +290,4 @@ func authErr(format string, args ...any) error {
 // exit 4, matching the API's not_found for the same condition.
 func notFoundErr(format string, args ...any) error {
 	return &cliError{msg: fmt.Sprintf(format, args...), code: client.ExitNotFound}
-}
-
-// errorsAs is errors.As without the reflection, for our two concrete types.
-func errorsAs[T error](err error, target *T) bool {
-	for err != nil {
-		if t, ok := err.(T); ok {
-			*target = t
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
 }
