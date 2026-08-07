@@ -1,0 +1,115 @@
+package cli
+
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/ciphera-net/pulse-cli/internal/client"
+	"github.com/ciphera-net/pulse-cli/internal/render"
+)
+
+func newStatsCmd(app *App) *cobra.Command {
+	var last, from, to string
+	var filterExprs []string
+
+	cmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Aggregate metrics for a site over a range",
+		Long: "Aggregate metrics for a site over a range.\n\n" +
+			"Filters narrow the query, and any filter engages the privacy floor: a slice\n" +
+			"covering fewer than five visitors is withheld entirely, including a genuine\n" +
+			"zero. A withheld metric prints as " + render.Withheld + " and never as 0.",
+		Example: "  pulse stats --last 7d\n" +
+			"  pulse stats --last 30d --filter country==BE\n" +
+			"  pulse stats --from 2026-08-01 --to 2026-08-07 --json",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			r, err := client.NewRange(last, from, to)
+			if err != nil {
+				return usageErr("%s", err.Error())
+			}
+			filters, err := parseFilters(filterExprs)
+			if err != nil {
+				return err
+			}
+
+			siteID, label, err := app.resolveSite(cmd.Context())
+			if err != nil {
+				return err
+			}
+			c, err := app.apiClient()
+			if err != nil {
+				return err
+			}
+
+			res, err := client.Stats(cmd.Context(), c, siteID, r, filters)
+			if err != nil {
+				return err
+			}
+
+			p := app.Printer
+			if p.Mode == render.ModeJSON {
+				p.JSON(res.Raw)
+				return nil
+			}
+
+			rows := [][]string{
+				{"Visitors", render.Metric(res.Data.Visitors)},
+				{"Pageviews", render.Metric(res.Data.Pageviews)},
+				{"Bounce rate", render.Percent(res.Data.BounceRate)},
+				{"Avg duration", render.Duration(res.Data.AvgDuration)},
+				{"Avg scroll depth", render.Percent(res.Data.AvgScrollDepth)},
+				{"Avg visible time", render.Duration(res.Data.AvgVisibleDuration)},
+			}
+
+			if p.Mode == render.ModeCSV {
+				return p.CSVRecords([]string{"metric", "value"}, rows)
+			}
+
+			// * The header prints meta.range — what the SERVER queried — not the
+			// * flags that were typed. They differ whenever a period was resolved
+			// * or the site's timezone is not the terminal's, and printing the
+			// * local guess is the drift server-side resolution exists to remove.
+			p.Printf("  %s · %s\n\n", p.Bold(label), client.DescribeRange(res.Meta.Range))
+
+			pairs := make([][2]string, 0, len(rows))
+			for _, r := range rows {
+				pairs = append(pairs, [2]string{r[0], r[1]})
+			}
+			p.KeyValue(pairs)
+
+			if note := render.SuppressionNote(res.Meta); note != "" {
+				p.Printf("\n")
+				p.Note("%s", note)
+			}
+			warnQuota(app, res.Header)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&last, "last", "", "relative period: 7d, 30d, month, year")
+	cmd.Flags().StringVar(&from, "from", "", "start date, YYYY-MM-DD (with --to)")
+	cmd.Flags().StringVar(&to, "to", "", "end date, YYYY-MM-DD (with --from)")
+	cmd.Flags().StringArrayVar(&filterExprs, "filter", nil,
+		"narrow the query, e.g. country==BE (repeatable; max 2 dimensions)")
+	return cmd
+}
+
+// parseFilters converts the repeated --filter flags and checks the dimension cap
+// before a request is spent.
+func parseFilters(exprs []string) ([]client.Filter, error) {
+	if len(exprs) == 0 {
+		return nil, nil
+	}
+	filters := make([]client.Filter, 0, len(exprs))
+	for _, expr := range exprs {
+		f, err := client.ParseFilter(expr)
+		if err != nil {
+			return nil, usageErr("%s", err.Error())
+		}
+		filters = append(filters, f)
+	}
+	if err := client.CheckFilterDimensions(filters); err != nil {
+		return nil, usageErr("%s", err.Error())
+	}
+	return filters, nil
+}

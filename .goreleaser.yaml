@@ -1,0 +1,130 @@
+version: 2
+
+project_name: pulse
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pulse
+    main: ./cmd/pulse
+    binary: pulse
+    # * CGO_ENABLED=0 is what makes this a single static binary with no runtime
+    # * for the user to install — the reason the CLI is written in Go at all.
+    # * It also keeps the keychain support portable: go-keyring reaches the macOS
+    # * Keychain through the `security` tool, libsecret over the session D-Bus,
+    # * and the Windows Credential Manager through syscalls. None of it needs cgo,
+    # * so cross-compiling all six targets from one machine is honest rather than
+    # * a build that merely links.
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      # * -s -w strips the symbol table and DWARF: smaller download, and nothing
+      # * a debugger needs on a machine that is not ours.
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: pulse
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksums:
+  name_template: "checksums.txt"
+
+# * Signed with cosign against a key held in Vault and injected by Woodpecker.
+# *
+# * NOT keyless/Fulcio: keyless needs an OIDC issuer that Fulcio trusts, and the
+# * estate runs Woodpecker rather than GitHub Actions — GH Actions was retired
+# * org-wide on 10-07-2026. A Vault-held key is the mechanism we can actually
+# * operate, and Woodpecker already authenticates to Vault.
+# *
+# * Both the archives AND checksums.txt are signed. Signing only the archives
+# * would leave the checksum file — the thing most people actually verify —
+# * unauthenticated.
+signs:
+  - id: cosign
+    cmd: cosign
+    artifacts: all
+    signature: "${artifact}.sig"
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - sign-blob
+      - "--key=env://COSIGN_PRIVATE_KEY"
+      - "--output-signature=${signature}"
+      # * No upload to the public Rekor transparency log.
+      # *
+      # * cosign uploads by default, and Rekor is operated in the US — the
+      # * standing rule is that no new US service enters the critical path
+      # * without explicit sign-off, and a release-signing pipeline is about as
+      # * critical as a path gets. Nothing secret would leak (Rekor records the
+      # * signature, the public key and a hash, never the artefact), but it would
+      # * make every release depend on a service outside the estate.
+      # *
+      # * The cost is real and worth naming: without a transparency log there is
+      # * no public, append-only record that our key signed exactly these
+      # * artefacts and nothing else. Verification becomes key-trust alone.
+      # * Verified locally: signatures produced this way verify with
+      # * --insecure-ignore-tlog=true and still reject a tampered archive.
+      - "--tlog-upload=false"
+      - "${artifact}"
+      - "--yes"
+
+brews:
+  - name: pulse
+    # * ciphera-net/homebrew-tap, not ciphera/homebrew-tap. Homebrew resolves
+    # * `user/tap` to github.com/user/homebrew-tap, and `ciphera` on GitHub is an
+    # * unrelated user account registered in 2016 — so `brew install
+    # * ciphera/tap/pulse` was never available to us.
+    repository:
+      owner: ciphera-net
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://ciphera.net/products/pulse"
+    description: "Read your Pulse analytics from the terminal"
+    license: "Apache-2.0"
+    commit_author:
+      name: Usman Baig
+      email: mubaig@pm.me
+    test: |
+      system "#{bin}/pulse", "--version"
+
+release:
+  github:
+    owner: ciphera-net
+    name: pulse-cli
+  header: |
+    ## pulse {{ .Version }}
+
+    ```bash
+    brew install ciphera-net/tap/pulse
+    go install github.com/ciphera-net/pulse-cli/cmd/pulse@{{ .Tag }}
+    ```
+
+    Verify a downloaded archive:
+
+    ```bash
+    cosign verify-blob --key https://raw.githubusercontent.com/ciphera-net/pulse-cli/main/cosign.pub \
+      --signature <archive>.sig <archive>
+    ```
+  footer: |
+    **Full changelog**: https://github.com/ciphera-net/pulse-cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

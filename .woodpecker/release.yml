@@ -1,0 +1,61 @@
+labels:
+  runner: k8s
+
+# Tags only. A release is an explicit act, never a side effect of a push to main.
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+steps:
+  release:
+    image: golang:1.25
+    backend_options:
+      kubernetes:
+        resources:
+          # Higher than the test step: goreleaser builds six targets in parallel.
+          requests: { memory: 2Gi, cpu: 1 }
+          limits: { memory: 4Gi }
+    environment:
+      # * The cosign signing key, held in Vault and exposed to this repo as a
+      # * Woodpecker secret. cosign reads it through env:// so it never lands on
+      # * disk in the workspace, where a later step or a cached layer could keep
+      # * it.
+      COSIGN_PRIVATE_KEY:
+        from_secret: cosign_private_key
+      COSIGN_PASSWORD:
+        from_secret: cosign_password
+      # * Publishes the GitHub release AND pushes the Homebrew formula to
+      # * ciphera-net/homebrew-tap, which is a different repository — so this
+      # * token needs `repo` on both.
+      GITHUB_TOKEN:
+        from_secret: release_github_token
+      TAP_GITHUB_TOKEN:
+        from_secret: release_github_token
+    commands:
+      # * Pinned versions, not @latest. A release pipeline that resolves its own
+      # * tooling at run time can produce a different artefact for the same tag,
+      # * which defeats the point of signing it.
+      - go install github.com/goreleaser/goreleaser/v2@v2.5.0
+      - go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
+      # * Fail before building rather than after: a missing secret otherwise
+      # * surfaces as a signing error at the very end, with six built archives
+      # * and nothing to sign them with.
+      - |
+        for v in COSIGN_PRIVATE_KEY COSIGN_PASSWORD GITHUB_TOKEN; do
+          eval "val=\$$v"
+          [ -n "$val" ] || { echo "missing required secret: $v"; exit 1; }
+        done
+      # * Verify the committed public key matches the private key we are about to
+      # * sign with, BEFORE producing anything. A mismatch here means every
+      # * published signature fails verification against the key the README tells
+      # * people to use — and that is discovered by a user, not by us.
+      - |
+        cosign public-key --key env://COSIGN_PRIVATE_KEY > /tmp/derived.pub
+        if ! diff -q /tmp/derived.pub cosign.pub; then
+          echo "cosign.pub in the repo does not match the signing key"
+          echo "--- repo:"; cat cosign.pub
+          echo "--- derived:"; cat /tmp/derived.pub
+          exit 1
+        fi
+        echo "ok  cosign.pub matches the signing key"
+      - goreleaser release --clean

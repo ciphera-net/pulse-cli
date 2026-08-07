@@ -1,0 +1,30 @@
+# Routes to the in-cluster Kubernetes agent, which advertises `!runner=k8s` — a
+# MANDATORY label, so an agent is only eligible when a task asks for it.
+labels:
+  runner: k8s
+
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+steps:
+  unit:
+    image: golang:1.25
+    # Resources are REQUIRED. Without them the step pod is QoS class BestEffort,
+    # which makes it the first thing the kubelet evicts under node memory
+    # pressure — and it dies during `go: downloading`, producing a log with zero
+    # `=== RUN` lines that `gh pr checks` renders identically to a real test
+    # failure. The tell is the absence of `=== RUN`.
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 1Gi, cpu: 500m }
+          limits: { memory: 3Gi }
+    commands:
+      - test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - go vet ./...
+      # * -race because the retry path uses a timer and a context, and a data
+      # * race there would surface as an intermittent CI failure rather than as
+      # * anything a reader would notice.
+      - go test -race ./...

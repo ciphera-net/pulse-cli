@@ -1,0 +1,69 @@
+labels:
+  runner: k8s
+
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+steps:
+  # * Cross-compile every published target on every PR.
+  # *
+  # * The alternative is finding out at tag time that a target does not build,
+  # * which is the worst moment: the tag is already pushed, and un-tagging a
+  # * release people may have started fetching is not a clean operation.
+  #
+  # * This is also the guard on the keychain backends. go-keyring selects a
+  # * different implementation per GOOS — `security` on darwin, D-Bus on linux,
+  # * wincred syscalls on windows — and a Linux-only build never compiles two of
+  # * the three. A compile failure there would otherwise reach a user before it
+  # * reached us.
+  cross-compile:
+    image: golang:1.25
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 1Gi, cpu: 500m }
+          limits: { memory: 3Gi }
+    environment:
+      CGO_ENABLED: "0"
+    commands:
+      - |
+        for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+          GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -o /dev/null ./cmd/pulse \
+            || { echo "FAILED: $target"; exit 1; }
+          echo "ok  $target"
+        done
+
+  # * A release archive that unpacks to a binary which cannot start is a bad
+  # * release, and `go test` cannot tell you that — it never links a main. This
+  # * runs the real artefact.
+  smoke:
+    image: golang:1.25
+    depends_on: [cross-compile]
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 512Mi, cpu: 250m }
+          limits: { memory: 2Gi }
+    commands:
+      - go build -trimpath -ldflags "-s -w -X main.version=ci" -o /tmp/pulse ./cmd/pulse
+      - /tmp/pulse --version
+      - /tmp/pulse --help
+      # * Every subcommand must at least render its help. A cobra wiring mistake
+      # * — a flag registered on the wrong command, a nil sub-command — compiles
+      # * cleanly and fails only when someone runs it.
+      - |
+        for cmd in "auth" "auth login" "auth status" "sites" "sites ls" "stats" "realtime" "export" "export daily" "export pages"; do
+          /tmp/pulse $cmd --help > /dev/null || { echo "FAILED: pulse $cmd --help"; exit 1; }
+          echo "ok  pulse $cmd --help"
+        done
+      # * Unauthenticated must exit 3, not 1. The exit table is a published
+      # * contract and this is the one code a script is most likely to branch on.
+      - |
+        set +e
+        PULSE_API_KEY="" /tmp/pulse stats --last 7d >/dev/null 2>&1
+        code=$?
+        set -e
+        [ "$code" = "3" ] || { echo "unauthenticated exited $code, want 3"; exit 1; }
+        echo "ok  unauthenticated exits 3"

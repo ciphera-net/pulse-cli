@@ -1,0 +1,20 @@
+# Build output.
+#
+# Root-anchored on purpose. A bare `pulse` here also matches the DIRECTORY
+# cmd/pulse, which silently excludes main.go — the repo then has no main package
+# and `git status` shows nothing wrong, because ignored files are not reported.
+# (The same shape as the bare `server` entry in pulse-backend, which hides
+# cmd/server/main.go from recursive grep.)
+/dist/
+/pulse
+/pulse.exe
+
+# Go
+*.test
+*.out
+
+# Signing material NEVER belongs in the repo. The private key lives in Vault
+# (kv/pulse-cli/cosign) and reaches CI as a Woodpecker secret. cosign.pub IS
+# committed, on purpose — it is what users verify against.
+cosign.key
+*.pem
