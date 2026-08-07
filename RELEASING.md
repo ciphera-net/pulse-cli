@@ -20,19 +20,45 @@ no business being available to a pull request from a fork.
 |---|---|---|
 | `cosign_private_key` | Vault `kv/pulse-cli/cosign` → `private_key` | ✅ configured |
 | `cosign_password` | Vault `kv/pulse-cli/cosign` → `password` | ✅ configured |
-| `release_github_token` | A GitHub PAT with `repo` scope | ⚠️ **not yet configured** |
+| `release_github_token` | A GitHub token, Contents:write on `pulse-cli` + `homebrew-tap` | ⚠️ **not yet configured — browser only, see below** |
 
-`release_github_token` needs `repo` on **two** repositories — this one, to create the release, and
-`ciphera-net/homebrew-tap`, to push the formula. A fine-grained token works if it grants Contents:
-write on both.
+### Why this one cannot be automated
+
+`release_github_token` has to be created **in a browser**. There is no way around it:
+
+- **GitHub removed programmatic PAT creation.** The old `POST /authorizations` endpoint returns
+  `404`, and there is no REST endpoint for fine-grained tokens.
+- **The deploy-key fallback is blocked.** goreleaser can push the Homebrew formula over SSH instead
+  of a token, and a deploy key *can* be created via the API — but this org returns
+  `422 "Deploy keys are disabled for this repository"`, and changing that needs `admin:org`.
+- **Reusing an operator's `gh` OAuth token is worse, not easier.** That token carries `delete_repo`,
+  `gist` and account-wide `repo`; a scoped release token carries Contents:write on two repositories.
+  Putting the broader credential in CI to save 30 seconds trades a large blast radius for a small
+  convenience.
+
+### Creating it
+
+**Fine-grained token** (preferred — smallest scope):
+<https://github.com/settings/personal-access-tokens/new>
+
+- Resource owner: **`ciphera-net`**
+- Repository access: **only** `ciphera-net/pulse-cli` and `ciphera-net/homebrew-tap`
+- Permissions: **Contents: Read and write** on both
+- Expiry: whatever your rotation cadence is — the pipeline fails loudly when it lapses
+
+A classic PAT with `repo` also works, but `repo` grants access to **every** repository the account can
+reach, which is exactly what the fine-grained form exists to avoid.
+
+Then install it:
 
 ```bash
-# Mint the token interactively, then:
 WT=$(grep '^WOODPECKER_TOKEN=' .env | cut -d= -f2- | tr -d '"')
 curl -X POST -H "Authorization: Bearer $WT" -H "Content-Type: application/json" \
   -d '{"name":"release_github_token","value":"<token>","events":["tag"]}' \
   https://ci.ciphera.net/api/repos/51/secrets
 ```
+
+`events: ["tag"]` matters: a release credential has no business being readable by a pull request.
 
 **Until it exists, a tag push will fail at the preflight check rather than half-publishing** — the
 pipeline verifies every secret is present before it builds anything, so the failure costs a pipeline
