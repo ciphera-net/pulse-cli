@@ -28,7 +28,10 @@ func (p *Printer) Table(t Table) {
 }
 
 func (p *Printer) tableCSV(t Table) {
-	w := csv.NewWriter(p.Out)
+	// * csv.Writer keeps its own sticky error, and every one of them arrived
+	// * from the stream underneath — which kept it too, and is what Execute
+	// * checks. Dropping them here loses nothing.
+	w := csv.NewWriter(p.out)
 	_ = w.Write(t.Headers)
 	for _, row := range t.Rows {
 		_ = w.Write(row)
@@ -103,7 +106,7 @@ func (p *Printer) KeyValue(pairs [][2]string) {
 
 // CSVRecords writes arbitrary records to stdout as CSV.
 func (p *Printer) CSVRecords(headers []string, rows [][]string) error {
-	w := csv.NewWriter(p.Out)
+	w := csv.NewWriter(p.out)
 	if err := w.Write(headers); err != nil {
 		return fmt.Errorf("writing csv header: %w", err)
 	}

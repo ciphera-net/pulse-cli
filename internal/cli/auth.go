@@ -174,9 +174,9 @@ func readKey(app *App) (string, error) {
 		return strings.TrimSpace(line), nil
 	}
 
-	fmt.Fprint(app.Printer.Err, "Paste your API key (create one at Settings → Organization → API Keys):\n› ")
+	fmt.Fprint(app.Printer.Err(), "Paste your API key (create one at Settings → Organization → API Keys):\n› ")
 	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(app.Printer.Err)
+	fmt.Fprintln(app.Printer.Err())
 	if err != nil {
 		return "", fmt.Errorf("reading key: %w", err)
 	}
