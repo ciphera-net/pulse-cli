@@ -14,6 +14,14 @@ import (
 // * who installed brew, so a self-replacing updater succeeds there and leaves
 // * `brew list --versions pulse` describing a binary that is gone. Nothing
 // * errors, and the next `brew upgrade` quietly reverts the user.
+// *
+// * Both Homebrew layouts are asserted. The tap published a FORMULA up to
+// * v1.1.0 (Cellar) and publishes a CASK from v1.1.1 (Caskroom) — and the two
+// * land in different directories, so a guard written against one stops firing
+// * the day the other ships. The Caskroom paths below are not invented: they are
+// * what `brew install --cask` actually produced on Homebrew 6.0.15 when the
+// * generated cask was installed from a local tap, resolved through the
+// * /opt/homebrew/bin symlink.
 func TestDetectIdentifiesTheInstallMethod(t *testing.T) {
 	cases := []struct {
 		name string
@@ -21,18 +29,33 @@ func TestDetectIdentifiesTheInstallMethod(t *testing.T) {
 		want Method
 	}{
 		{
-			name: "homebrew on apple silicon",
+			name: "homebrew formula on apple silicon",
 			path: "/opt/homebrew/Cellar/pulse/1.0.0/bin/pulse",
 			want: MethodHomebrew,
 		},
 		{
-			name: "homebrew on intel macos",
+			name: "homebrew formula on intel macos",
 			path: "/usr/local/Cellar/pulse/1.0.0/bin/pulse",
 			want: MethodHomebrew,
 		},
 		{
-			name: "linuxbrew",
+			name: "homebrew formula on linux",
 			path: "/home/linuxbrew/.linuxbrew/Cellar/pulse/1.0.0/bin/pulse",
+			want: MethodHomebrew,
+		},
+		{
+			name: "homebrew cask on apple silicon",
+			path: "/opt/homebrew/Caskroom/pulse/1.1.1/pulse",
+			want: MethodHomebrew,
+		},
+		{
+			name: "homebrew cask on intel macos",
+			path: "/usr/local/Caskroom/pulse/1.1.1/pulse",
+			want: MethodHomebrew,
+		},
+		{
+			name: "homebrew cask on linux",
+			path: "/home/linuxbrew/.linuxbrew/Caskroom/pulse/1.1.1/pulse",
 			want: MethodHomebrew,
 		},
 		{
@@ -234,36 +257,63 @@ func TestCheckWritableAcceptsAWritableDirectoryAndCleansUp(t *testing.T) {
 }
 
 // * The resolution step Detect depends on. On a Homebrew install
-// * /usr/local/bin/pulse is a SYMLINK into the Cellar: without EvalSymlinks the
-// * path looks like a plain binary, detection says "mine to replace", and the
-// * replacement overwrites the symlink with a regular file.
+// * /usr/local/bin/pulse is a SYMLINK into the Cellar (formula) or the Caskroom
+// * (cask): without EvalSymlinks the path looks like a plain binary, detection
+// * says "mine to replace", and the replacement overwrites the symlink with a
+// * regular file.
+// *
+// * Both layouts are exercised because the link target is the ONLY thing that
+// * differs between them — the symlink itself sits at the same
+// * <prefix>/bin/pulse in either case, so the unresolved path is equally
+// * uninformative and equally dangerous.
 func TestExecutablePathResolvesSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs a privilege this test should not assume on Windows")
 	}
-	dir := t.TempDir()
-	cellar := filepath.Join(dir, "Cellar", "pulse", "1.0.0", "bin")
-	if err := os.MkdirAll(cellar, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	real := filepath.Join(cellar, "pulse")
-	if err := os.WriteFile(real, []byte("binary"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(dir, "pulse")
-	if err := os.Symlink(real, link); err != nil {
-		t.Fatal(err)
+	layouts := []struct {
+		name    string
+		target  []string // path segments below the brew prefix
+		explain string
+	}{
+		{
+			name:    "formula, into the Cellar",
+			target:  []string{"Cellar", "pulse", "1.0.0", "bin"},
+			explain: "Cellar",
+		},
+		{
+			name:    "cask, into the Caskroom",
+			target:  []string{"Caskroom", "pulse", "1.1.1"},
+			explain: "Caskroom",
+		},
 	}
 
-	resolved, err := filepath.EvalSymlinks(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if Detect(link) != MethodBinary {
-		t.Fatal("precondition: the unresolved symlink should look like a plain binary")
-	}
-	if got := Detect(resolved); got != MethodHomebrew {
-		t.Errorf("Detect(%q) = %q, want %q — resolving the symlink is what exposes the Cellar",
-			resolved, got, MethodHomebrew)
+	for _, l := range layouts {
+		t.Run(l.name, func(t *testing.T) {
+			dir := t.TempDir()
+			staged := filepath.Join(append([]string{dir}, l.target...)...)
+			if err := os.MkdirAll(staged, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			real := filepath.Join(staged, "pulse")
+			if err := os.WriteFile(real, []byte("binary"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(dir, "pulse")
+			if err := os.Symlink(real, link); err != nil {
+				t.Fatal(err)
+			}
+
+			resolved, err := filepath.EvalSymlinks(link)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if Detect(link) != MethodBinary {
+				t.Fatal("precondition: the unresolved symlink should look like a plain binary")
+			}
+			if got := Detect(resolved); got != MethodHomebrew {
+				t.Errorf("Detect(%q) = %q, want %q — resolving the symlink is what exposes the %s",
+					resolved, got, MethodHomebrew, l.explain)
+			}
+		})
 	}
 }

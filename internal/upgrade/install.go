@@ -21,7 +21,7 @@ const (
 	// behind it: the only case pulse replaces itself.
 	MethodBinary Method = "binary"
 
-	// MethodHomebrew is a formula install.
+	// MethodHomebrew is a Homebrew install, cask or formula.
 	MethodHomebrew Method = "homebrew"
 
 	// MethodGoInstall is `go install`.
@@ -40,6 +40,15 @@ const (
 // the next `brew upgrade pulse` silently reverting the user to an older binary.
 // Nothing errors; the tool just lies about its own version from then on.
 //
+// BOTH Homebrew layouts are matched, because pulse has shipped through both. A
+// formula stages into .../Cellar/pulse/<version>/bin/pulse; a cask — which is
+// what the tap publishes from v1.1.1 on — stages into
+// .../Caskroom/pulse/<version>/pulse. Matching only the Cellar would have made
+// the Homebrew guard silently stop firing on the release that switched, which is
+// the worst possible shape for this bug: no error, no failing build, just every
+// brew user's install quietly desynchronised the first time they run
+// `pulse upgrade`.
+//
 // A GOPATH/GOBIN install has the same shape: the file is writable, and replacing
 // it desynchronises what `go version -m` reports about the module that built it.
 func Detect(exe string) Method {
@@ -56,9 +65,14 @@ func Detect(exe string) Method {
 	// * being asserted only by a CI job we do not run.
 	p := strings.ReplaceAll(filepath.ToSlash(exe), `\`, "/")
 	switch {
-	case strings.Contains(p, "/Cellar/"):
-		// * Linuxbrew lands at /home/linuxbrew/.linuxbrew/Cellar/… and matches
-		// * the same way, which is deliberate: the formula covers both.
+	case strings.Contains(p, "/Cellar/"), strings.Contains(p, "/Caskroom/"):
+		// * Homebrew on Linux lands at /home/linuxbrew/.linuxbrew/{Cellar,Caskroom}/…
+		// * and matches the same way, which is deliberate: the tap covers Linux too.
+		// *
+		// * Cellar is the formula layout (shipped up to v1.1.0), Caskroom the cask
+		// * layout (v1.1.1 on). Both stay matched forever — a machine that
+		// * installed the formula years ago still has a Cellar path, and
+		// * `brew upgrade pulse` is the right answer for it either way.
 		return MethodHomebrew
 	case strings.Contains(p, "/go/bin/"):
 		return MethodGoInstall

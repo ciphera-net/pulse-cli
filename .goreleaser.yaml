@@ -80,20 +80,29 @@ signs:
       - "${artifact}"
       - "--yes"
 
-# * `brews` (a Homebrew FORMULA) rather than `homebrew_casks`, despite goreleaser
-# * deprecating it.
+# * `homebrew_casks`, migrated from the deprecated `brews` — and the condition
+# * that kept `brews` alive was CHECKED, not assumed, before the switch.
 # *
-# * Casks are macOS-only. A formula installs on macOS AND on Linux through
-# * Linuxbrew, and Linux is where this tool is most likely to be scripted — the
-# * CI case the PULSE_API_KEY fallback exists for. Switching to a cask to clear a
-# * deprecation warning would silently drop `brew install` for half the intended
-# * users.
+# * The old note here said "casks are macOS-only, a formula covers Linux too, so
+# * switching would silently drop brew install for half our users". That was true
+# * when it was written and is no longer true. Homebrew 6.0.0 (11-06-2026) landed
+# * Linux cask support for portable artifacts, and this cask uses exactly one
+# * artifact type — `binary`, which the Cask Cookbook lists as usable on either
+# * operating system. Nothing here is macOS-only: no app, no pkg, no
+# * `depends_on :macos`.
 # *
-# * Deprecated is not removed, and the goreleaser version is pinned in
-# * .woodpecker/release.yml, so the day it is removed is a day we choose. Revisit
-# * if Homebrew gains cask support on Linux, or if the Linux install path turns
-# * out to be unused.
-brews:
+# * Measured on the generated cask rather than argued from docs (Homebrew 6.0.15,
+# * loaded from a local tap):
+# *   - the file carries an `on_linux` block with linux_amd64 AND linux_arm64
+# *     URLs and checksums, alongside the `on_macos` block;
+# *   - `Cask#supports_linux?` returns TRUE, so `brew search`/`info`/`bundle`
+# *     advertise it on Linux rather than hiding it;
+# *   - under `SimulateSystem.with(os: :linux)` Homebrew resolves the cask to
+# *     the linux_amd64 / linux_arm64 archives, not the darwin ones.
+# *
+# * `binaries:`, not the singular `binary:` — that spelling is itself deprecated
+# * and `goreleaser check` fails on it.
+homebrew_casks:
   - name: pulse
     # * ciphera-net/homebrew-tap, not ciphera/homebrew-tap. Homebrew resolves
     # * `user/tap` to github.com/user/homebrew-tap, and `ciphera` on GitHub is an
@@ -103,15 +112,27 @@ brews:
       owner: ciphera-net
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://ciphera.net/products/pulse"
     description: "Read your Pulse analytics from the terminal"
     license: "Apache-2.0"
+    binaries: [pulse]
+    # * There is deliberately NO `conflicts: - formula: pulse` here, and its
+    # * absence is not an oversight. goreleaser deprecated that field because
+    # * Homebrew removed `conflicts_with formula:` from casks entirely
+    # * (Homebrew/brew#20499) — it was a no-op even before that, so writing it
+    # * would be a guard that looks like protection and provides none.
+    # *
+    # * The real guard is deleting Formula/pulse.rb from the tap and adding
+    # * tap_migrations.json, which is a MANDATORY part of this migration — see
+    # * RELEASING.md, "Migrating the tap". It is not cosmetic: with
+    # * Formula/pulse.rb and Casks/pulse.rb both present, measured on Homebrew
+    # * 6.0.15, `brew install ciphera-net/tap/pulse` resolves to the FORMULA and
+    # * only warns. The cask would be published, ignored, and never installed by
+    # * anyone, with no error anywhere to say so.
     commit_author:
       name: Usman Baig
       email: mubaig@pm.me
-    test: |
-      system "#{bin}/pulse", "--version"
 
 release:
   github:
