@@ -161,6 +161,11 @@ pulse auth status >/dev/null 2>&1 || { [ $? -eq 3 ] && pulse auth login; }
 On a `429` the CLI honours `Retry-After` and retries **once**, noting it on stderr. Only a second
 failure exits `5`.
 
+Output that could not be written is a failure, not a success. A full disk, a quota, or a `ulimit -f`
+cap exits `1` and names the stream and the reason on stderr, so
+`pulse export daily > week.csv` can never leave you a truncated file and a `0`. A **closed pipe is
+not** a failure — `pulse sites ls | head -3` is the pipeline working, and it stays quiet.
+
 ## Credentials
 
 `pulse auth login` writes to the macOS Keychain, libsecret (Linux), or the Windows Credential

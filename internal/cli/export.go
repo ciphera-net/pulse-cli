@@ -91,7 +91,11 @@ func newExportSubCmd(app *App, kind client.ExportKind, use, short string) *cobra
 			// * The body goes to stdout byte-for-byte. Re-parsing and re-emitting
 			// * it would make the CLI a second formatter of a contract that is
 			// * already published, and would drop any column added later.
-			app.Printer.Out.Write(body)
+			// *
+			// * A short or refused write is kept by the stream and turns into a
+			// * non-zero exit — an export is the one command where a truncated
+			// * result is both most likely and least visible.
+			app.Printer.Raw(body)
 
 			// * Always say which site and which dates, on stderr. A CSV
 			// * redirected to a file has no header identifying either, and

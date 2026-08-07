@@ -50,7 +50,12 @@ var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 // Execute runs the CLI and returns a process exit code.
 func Execute() int {
-	app := &App{}
+	// * The printer exists before cobra runs, not inside PersistentPreRunE.
+	// * `pulse --help` and `pulse --version` are answered by cobra before the
+	// * pre-run hook fires, so a printer built there leaves cobra's own output
+	// * writing to an unchecked os.Stdout. Only the MODE depends on the flags,
+	// * and the mode is set once they are parsed.
+	app := &App{Printer: render.NewPrinter(render.ModeTable)}
 	var asJSON, asCSV bool
 
 	root := &cobra.Command{
@@ -66,14 +71,12 @@ func Execute() int {
 			if asJSON && asCSV {
 				return usageErr("--json and --csv both set; pick one")
 			}
-			mode := render.ModeTable
 			switch {
 			case asJSON:
-				mode = render.ModeJSON
+				app.Printer.Mode = render.ModeJSON
 			case asCSV:
-				mode = render.ModeCSV
+				app.Printer.Mode = render.ModeCSV
 			}
-			app.Printer = render.NewPrinter(mode)
 
 			cfg, err := config.Load()
 			if err != nil {
@@ -102,34 +105,54 @@ func Execute() int {
 		newExportCmd(app),
 	)
 
-	if err := root.Execute(); err != nil {
+	// * Cobra writes help, usage and --version itself. Pointing it at the
+	// * printer's streams means those are checked too, rather than being the one
+	// * output path that can still be truncated silently.
+	root.SetOut(app.Printer.Out())
+	root.SetErr(app.Printer.Err())
+
+	return finish(app, root.Execute())
+}
+
+// finish turns what the command returned into a process exit code.
+//
+// A command that returned an error explains itself, and its code is the one a
+// script wants. Only when nothing else failed is the output itself examined —
+// because a command can succeed completely and still have delivered a truncated
+// answer, and exiting 0 on that is how a script keeps a broken file.
+func finish(app *App, err error) int {
+	if err != nil {
 		return report(app.Printer, err, app.started)
+	}
+	if werr := app.Printer.WriteError(); werr != nil {
+		// * Named, not just non-zero: "no space left on device" and "file size
+		// * limit exceeded" call for different responses. If stderr is the
+		// * stream that broke this reaches nobody, and the exit code is all
+		// * that survives — which is still the part a script branches on.
+		fmt.Fprintf(app.Printer.Err(), "%s %v\n", mark(app.Printer), werr)
+		return client.ExitServerError
 	}
 	return client.ExitOK
 }
 
 // report prints an error the way a person can act on and returns its exit code.
 func report(p *render.Printer, err error, started bool) int {
-	if p == nil {
-		p = render.NewPrinter(render.ModeTable)
-	}
-
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
-		fmt.Fprintf(p.Err, "%s %s\n", mark(p), apiErr.Error())
+		fmt.Fprintf(p.Err(), "%s %s\n", mark(p), apiErr.Error())
 		if hint := hintFor(apiErr); hint != "" {
-			fmt.Fprintf(p.Err, "  %s\n", p.Dim(hint))
+			fmt.Fprintf(p.Err(), "  %s\n", p.Dim(hint))
 		}
 		return apiErr.ExitCode()
 	}
 
 	var ce *cliError
 	if errors.As(err, &ce) {
-		fmt.Fprintf(p.Err, "%s %s\n", mark(p), ce.msg)
+		fmt.Fprintf(p.Err(), "%s %s\n", mark(p), ce.msg)
 		return ce.code
 	}
 
-	fmt.Fprintf(p.Err, "%s %v\n", mark(p), err)
+	fmt.Fprintf(p.Err(), "%s %v\n", mark(p), err)
 	if !started {
 		// * Cobra refused the invocation before the command ran: unknown
 		// * command, unknown flag, wrong argument count. That is bad usage, and

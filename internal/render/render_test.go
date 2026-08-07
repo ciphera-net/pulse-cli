@@ -8,7 +8,7 @@ import (
 
 func testPrinter(mode Mode) (*Printer, *bytes.Buffer, *bytes.Buffer) {
 	out, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
-	return &Printer{Out: out, Err: errBuf, Mode: mode, Color: false}, out, errBuf
+	return NewPrinterTo(out, errBuf, mode), out, errBuf
 }
 
 // * Everything that is not the answer goes to stderr.
