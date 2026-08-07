@@ -64,6 +64,26 @@ curl -X POST -H "Authorization: Bearer $WT" -H "Content-Type: application/json" 
 pipeline verifies every secret is present before it builds anything, so the failure costs a pipeline
 run and nothing else.
 
+## Tool pinning — both pins are load-bearing
+
+The release step runs in `ghcr.io/goreleaser/goreleaser:v2.17.1`, which already carries goreleaser,
+Go 1.26.5, git and cosign. It replaced `golang:1.25` + `go install goreleaser`, which cannot work:
+goreleaser 2.17.1 needs Go >= 1.26.5 and that image sets `GOTOOLCHAIN=local`.
+
+**cosign is then pinned BACK to v2.4.1, ahead of the v3 the image ships.** This is not tidiness.
+**cosign v3 changed the signing contract**: with `--tlog-upload=false` it refuses to run without
+`--bundle --new-bundle-format`, and what it produces is not readable by the
+`verify-blob --signature` command this project's README documents.
+
+Verified inside that exact image before pinning: with v3 the sign step errors and writes nothing;
+with v2.4.1 it signs, verifies against the committed public key, and rejects a modified file. The
+pipeline asserts the version rather than printing it — if v3 were still first on `PATH`, every
+signature published would be unverifiable by the documented command.
+
+> A trap worth remembering: a tamper-detection check *passes* when signing failed entirely, because
+> there is no valid signature for anything. Any test that a bad input is rejected is meaningless
+> unless you also confirm the good input was accepted.
+
 ## The signing key
 
 Generated 2026-08-07, stored in Vault at `kv/pulse-cli/cosign`. The public half is committed as

@@ -8,7 +8,16 @@ when:
 
 steps:
   release:
-    image: golang:1.25
+    # * The prebuilt goreleaser image, pinned to the same version build.yml
+    # * checks the config against.
+    # *
+    # * It was `golang:1.25` with `go install goreleaser@v2.17.1`, which fails:
+    # * goreleaser 2.17.1 requires Go >= 1.26.5 and the image sets
+    # * GOTOOLCHAIN=local, so it cannot fetch a newer one. This image already
+    # * carries goreleaser 2.17.1, Go 1.26.5 and git — no build step, no version
+    # * negotiation, and the tool is pinned by tag rather than resolved at run
+    # * time.
+    image: ghcr.io/goreleaser/goreleaser:v2.17.1
     backend_options:
       kubernetes:
         resources:
@@ -32,11 +41,32 @@ steps:
       TAP_GITHUB_TOKEN:
         from_secret: release_github_token
     commands:
-      # * Pinned versions, not @latest. A release pipeline that resolves its own
-      # * tooling at run time can produce a different artefact for the same tag,
-      # * which defeats the point of signing it.
-      - go install github.com/goreleaser/goreleaser/v2@v2.17.1
+      # * cosign v2, pinned ahead of the v3 the image ships.
+      # *
+      # * This is not tidiness. cosign v3 CHANGED THE SIGNING CONTRACT: with
+      # * --tlog-upload=false it refuses to run without --bundle
+      # * --new-bundle-format, and signatures it does produce are not readable by
+      # * the `verify-blob --signature` command this project's README documents.
+      # *
+      # * Verified inside this exact image before pinning: with v3 the sign step
+      # * errors and nothing is written; with v2.4.1 it signs, verifies against
+      # * the committed public key, and rejects a modified file.
+      # *
+      # * Worth noting how this could have shipped silently — a tamper test
+      # * "passes" when signing failed entirely, because there is no valid
+      # * signature for anything. Any check that a bad input is rejected is
+      # * meaningless unless the good input was accepted first.
+      - export GOBIN=/tmp/bin
       - go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
+      - export PATH=/tmp/bin:$PATH
+      # * Assert the pin took, rather than printing it for nobody to read. If the
+      # * image's v3 is still first on PATH, every signature this release
+      # * publishes would be unverifiable by the command the README gives.
+      - |
+        v=$(cosign version 2>&1 | grep -i "GitVersion" | head -1)
+        echo "$v"
+        echo "$v" | grep -q "v2\." || { echo "cosign is NOT v2 — refusing to sign"; exit 1; }
+        echo "ok  cosign v2 pinned ahead of the image default"
       # * Fail before building rather than after: a missing secret otherwise
       # * surfaces as a signing error at the very end, with six built archives
       # * and nothing to sign them with.
