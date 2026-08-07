@@ -46,10 +46,16 @@ steps:
   # * the same version release.yml installs — a check against a different
   # * version validates the wrong schema.
   # *
-  # * `check` exits non-zero on DEPRECATIONS as well as errors, and `brews` is
-  # * deliberately deprecated-but-kept (see .goreleaser.yaml), so the pass
-  # * condition is the "configuration is valid" line. A real schema error does
-  # * not produce it.
+  # * `check` exits non-zero on DEPRECATIONS as well as errors, and that is now
+  # * the whole point of running it.
+  # *
+  # * This used to grep for the "configuration is valid" line and ignore the exit
+  # * code, because `brews` was deliberately deprecated-but-kept. `brews` is gone
+  # * (migrated to homebrew_casks, 07-08-2026) and the config is deprecation-free,
+  # * so the exit code is trustworthy again — and the grep was not: it printed
+  # * "ok" for ANY deprecation, including one scheduled for removal in the very
+  # * next goreleaser. Deprecations are how goreleaser gives notice; swallowing
+  # * them means the notice arrives as a broken release instead.
   goreleaser-config:
     image: ghcr.io/goreleaser/goreleaser:v2.17.1
     backend_options:
@@ -58,12 +64,8 @@ steps:
           requests: { memory: 256Mi, cpu: 100m }
           limits: { memory: 1Gi }
     commands:
-      - |
-        out=$(goreleaser check 2>&1) || true
-        echo "$out"
-        echo "$out" | grep -q "configuration is valid" || {
-          echo "goreleaser config is INVALID"; exit 1; }
-        echo "ok  goreleaser config valid"
+      - goreleaser check
+      - echo "ok  goreleaser config valid, with no deprecated properties"
 
   # * A release archive that unpacks to a binary which cannot start is a bad
   # * release, and `go test` cannot tell you that — it never links a main. This

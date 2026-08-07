@@ -27,6 +27,17 @@ go install github.com/ciphera-net/pulse-cli/cmd/pulse@latest
 Or download a signed archive from [releases](https://github.com/ciphera-net/pulse-cli/releases) —
 macOS, Linux and Windows, amd64 and arm64. See [Verifying a release](#verifying-a-release).
 
+> **Upgrading from v1.1.0 or earlier?** The tap moved from a Homebrew formula to a cask in v1.1.1.
+> Homebrew does not switch you across on its own, so `brew upgrade` will stop finding new versions.
+> Run this once:
+>
+> ```bash
+> brew uninstall pulse && brew install ciphera-net/tap/pulse
+> ```
+>
+> Everything else is unchanged, Linux included — the cask carries `linux_amd64` and `linux_arm64`
+> builds and installs on Homebrew for Linux the same way the formula did.
+
 ## Getting started
 
 ```console
@@ -208,9 +219,10 @@ $ pulse upgrade --check --json
 ```
 
 **A pulse installed by a package manager is left alone.** Homebrew and `go install` each keep their
-own record of what version they put there, and the Cellar is writable — so replacing the file in
-place *works*, and then `brew list --versions pulse` describes a binary that no longer exists and the
-next `brew upgrade` quietly reverts you. `pulse upgrade` detects both and prints what to run instead:
+own record of what version they put there, and the Cellar (or Caskroom) is writable — so replacing the
+file in place *works*, and then `brew list --versions pulse` describes a binary that no longer exists
+and the next `brew upgrade` quietly reverts you. `pulse upgrade` detects both Homebrew layouts, cask
+and formula, and prints what to run instead:
 
 ```console
 $ pulse upgrade
@@ -234,6 +246,11 @@ cosign verify-blob \
 ```
 
 `checksums.txt` is published alongside and is itself signed.
+
+Works on both current cosign majors. Releases are signed with cosign v2.4.1, and the command above was
+checked against **v2.4.1 and v3.1.2**: both print `Verified OK` for a good archive and both fail on a
+modified one. cosign v3 adds a `--signature has been deprecated` warning — the verification it
+performs is the same.
 
 **About that flag.** We sign with our own key and do **not** publish to the Sigstore transparency log,
 which is operated in the US — Ciphera's stack is deliberately EU/CH-based and a release pipeline is

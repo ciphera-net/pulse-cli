@@ -9,7 +9,11 @@ git push origin v1.0.0
 ```
 
 Woodpecker then builds six targets, signs every artefact with cosign, publishes a GitHub release,
-and pushes the Homebrew formula to [`ciphera-net/homebrew-tap`](https://github.com/ciphera-net/homebrew-tap).
+and pushes the Homebrew **cask** to [`ciphera-net/homebrew-tap`](https://github.com/ciphera-net/homebrew-tap).
+
+> 🔴 **The first release after the cask migration (v1.1.1) needs one manual step in the tap.**
+> Read [Migrating the tap](#migrating-the-tap-one-time-at-v111) before tagging. Skipping it publishes a
+> cask that nobody can install, with no error to say so.
 
 ## Required secrets
 
@@ -65,25 +69,88 @@ curl -X POST -H "Authorization: Bearer $WT" -H "Content-Type: application/json" 
 pipeline verifies every secret is present before it builds anything, so the failure costs a pipeline
 run and nothing else.
 
-## Tool pinning — both pins are load-bearing
+## Tool pinning — one pin retired, one kept
 
 The release step runs in `ghcr.io/goreleaser/goreleaser:v2.17.1`, which already carries goreleaser,
 Go 1.26.5, git and cosign. It replaced `golang:1.25` + `go install goreleaser`, which cannot work:
 goreleaser 2.17.1 needs Go >= 1.26.5 and that image sets `GOTOOLCHAIN=local`.
 
-**cosign is then pinned BACK to v2.4.1, ahead of the v3 the image ships.** This is not tidiness.
-**cosign v3 changed the signing contract**: with `--tlog-upload=false` it refuses to run without
-`--bundle --new-bundle-format`, and what it produces is not readable by the
-`verify-blob --signature` command this project's README documents.
+Two deliberate pins used to sit on top of that image. Both were re-tested on **07-08-2026**. One is
+now gone; the other stays, and the tests that keep it are written out below so nobody has to
+re-litigate it from scratch.
 
-Verified inside that exact image before pinning: with v3 the sign step errors and writes nothing;
-with v2.4.1 it signs, verifies against the committed public key, and rejects a modified file. The
-pipeline asserts the version rather than printing it — if v3 were still first on `PATH`, every
-signature published would be unverifiable by the documented command.
+### RETIRED: `brews` → `homebrew_casks`
 
-> A trap worth remembering: a tamper-detection check *passes* when signing failed entirely, because
-> there is no valid signature for anything. Any test that a bad input is rejected is meaningless
-> unless you also confirm the good input was accepted.
+The reason `brews` was kept was that **casks were macOS-only and a formula covered Linux too**. That
+was true when it was written. It is no longer true: Homebrew 6.0.0 (11-06-2026) added Linux support
+for portable cask artifacts, and the cask goreleaser generates uses exactly one artifact — `binary`,
+which the Cask Cookbook lists as usable on either operating system.
+
+Measured on the generated cask, on **Homebrew 6.0.15**, loaded from a local tap — not argued from
+release notes:
+
+| Check | Result |
+|---|---|
+| `on_linux` block present with both Linux arches | ✅ `linux_amd64` + `linux_arm64` URLs and sha256s |
+| `Cask#supports_linux?` | ✅ `true` (so `search` / `info` / `bundle` advertise it on Linux) |
+| `SimulateSystem.with(os: :linux, arch: :intel)` → resolved URL | ✅ `…_linux_amd64.tar.gz` |
+| `SimulateSystem.with(os: :linux, arch: :arm)` → resolved URL | ✅ `…_linux_arm64.tar.gz` |
+| Only artifact type | ✅ `Cask::Artifact::Binary`; `depends_on.macos` is `nil` |
+
+Two things fell out of that work and are recorded where they matter:
+
+- **`goreleaser check` now exits 0**, so both pipelines gate on the **exit code** again instead of
+  grepping for `configuration is valid`. The grep was a workaround for the deliberate deprecation; it
+  would also have swallowed the *next* deprecation silently.
+- **`pulse upgrade` had to learn the cask layout.** A formula stages into
+  `…/Cellar/pulse/<v>/bin/pulse`; a cask stages into `…/Caskroom/pulse/<v>/pulse`. The Homebrew guard
+  matched `/Cellar/` only, so the first cask release would have made it stop firing — silently, with
+  no error and no failing build, leaving `pulse upgrade` free to overwrite a brew-managed binary.
+  `internal/upgrade.Detect` now matches both, and both arms are covered by tests that were confirmed
+  to fail when their arm is removed.
+
+### KEPT: cosign v2.4.1, ahead of the v3 in the image
+
+The image now ships **cosign v3.1.2**. It still cannot produce the signature this project publishes.
+Re-tested 07-08-2026 inside `ghcr.io/goreleaser/goreleaser:v2.17.1` itself:
+
+| Attempt (v3.1.2) | Result |
+|---|---|
+| The exact `.goreleaser.yaml` args (`--output-signature` + `--tlog-upload=false`) | ❌ `Error: must specify --bundle with --new-bundle-format` — nothing written |
+| `--bundle --new-bundle-format --tlog-upload=false` | ❌ `Error: --tlog-upload=false is not supported with --signing-config or --use-signing-config` |
+| `--new-bundle-format=false` | ❌ same `--tlog-upload` error |
+| `signing-config create --no-default-rekor --no-default-fulcio --no-default-oidc --no-default-tsa` then `--signing-config … --bundle --new-bundle-format` | ✅ **signs, with no transparency log** — but emits a Sigstore *bundle* |
+| That bundle, fed to the README's `verify-blob --key … --signature …` | ❌ `Error: invalid signature when validating IEEE_P1363 encoded signature` |
+| `--signing-config … --output-signature=…` (to get a detached sig back) | ❌ `Error: must specify --bundle with --new-bundle-format` |
+
+So: v3 **can** sign without Rekor — that part of the old note is now out of date, and a signing-config
+file is the mechanism — but there is **no combination that emits the detached `.sig` the documented
+`verify-blob --signature` command reads.** Migrating would mean publishing bundles and rewriting the
+README's verification command, which is a user-visible break in the one instruction this project asks
+people to trust. The answer is still: keep the pin.
+
+**The pin costs users nothing.** Also measured in that image, signing with v2.4.1 and verifying with
+each version, using the README command verbatim:
+
+| | good archive | tampered archive |
+|---|---|---|
+| cosign v2.4.1 verifies a v2.4.1 signature | ✅ `Verified OK` | ✅ fails: `invalid signature when validating ASN.1 encoded signature` |
+| cosign **v3.1.2** verifies a v2.4.1 signature | ✅ `Verified OK` (with a `--signature has been deprecated` warning) | ✅ fails: same error |
+
+A user on cosign v3 can still verify our releases with the command in the README. Only the *signer*
+has to be v2.
+
+> A trap worth remembering, and it fired again during this re-test: a tamper-detection check
+> *passes* when signing failed entirely, because there is no valid signature for anything. Under v3
+> both the good and the tampered artifact "failed" — with an identical parse error. Any test that a
+> bad input is rejected is meaningless unless you also confirm the good input was accepted.
+
+**When to revisit.** `--signature` is deprecated on the *verify* side too, so a future cosign
+(v4-shaped) may drop it and break verification for anyone on a current release. The escape hatch is
+known: sign into a bundle via a no-tlog `--signing-config`, publish `.bundle` alongside `.sig`, and
+change the README to `verify-blob --bundle`. `pulse upgrade`'s embedded verification would move with
+it. Do that when v2 stops being installable, not before — every published release's `.sig` has to
+stay verifiable.
 
 ## The signing key
 
@@ -165,17 +232,67 @@ goreleaser release --snapshot --clean --skip=publish,sign
 ```
 
 The snapshot builds all six targets, writes the archives and checksums, and generates the Homebrew
-formula into `dist/` — everything the real release does except publishing and signing. **v1.0.0's
-first attempt failed on a config schema error that this would have caught in two seconds.**
+cask into `dist/homebrew/Casks/pulse.rb` — everything the real release does except publishing and
+signing. **v1.0.0's first attempt failed on a config schema error that this would have caught in two
+seconds.**
 
-`goreleaser check` exits non-zero on deprecation warnings as well as errors, and `brews` is
-deliberately deprecated-but-kept — so both pipelines test for the `configuration is valid` line
-rather than the exit code.
+Read the generated cask, do not just note that it was written. It must still carry an `on_linux`
+block with `linux_amd64` **and** `linux_arm64` URLs:
+
+```bash
+grep -A6 on_linux dist/homebrew/Casks/pulse.rb
+```
+
+`goreleaser check` exits non-zero on deprecation warnings as well as errors. The config carries no
+deprecated properties any more, so both pipelines gate on the **exit code**. Do not reintroduce a
+grep-for-`configuration is valid` gate: it passes on any future deprecation, which is exactly how a
+removed-next-version setting reaches a tag unnoticed.
+
+## Migrating the tap (one time, at v1.1.1)
+
+Releases up to v1.1.0 published a **Formula**; v1.1.1 on publishes a **Cask**. goreleaser writes the
+new file but cannot delete the old one, and both cannot coexist.
+
+Measured on Homebrew 6.0.15 with `Formula/pulse.rb` and `Casks/pulse.rb` both present in a tap:
+`brew install ciphera-net/tap/pulse` resolves to the **formula** and only prints
+`Warning: Treating … as a formula. For the cask, use … or specify the --cask flag.` The cask is
+published, never installed, and never updated — silently. With the formula removed, the same command
+resolves straight to the cask with no flag and no warning.
+
+So, immediately after the v1.1.1 release pipeline goes green:
+
+```bash
+# in ciphera-net/homebrew-tap, on a branch
+git rm Formula/pulse.rb
+```
+
+`Formula/` is otherwise generated by goreleaser and must never be hand-edited — this deletion is the
+exception, and it is a deletion, not an edit.
+
+**Existing `brew install`ed users do not migrate themselves, and Homebrew has no mechanism that makes
+them.** `tap_migrations.json` only redirects to a *different* tap: `Formulary` guards the migration
+branch on `tapped_name != new_tapped_name`, so a same-tap `{"pulse": "ciphera-net/tap"}` entry is a
+no-op. Verified — with that entry in place and only a cask in the tap, the formula lookup still raised
+`TapFormulaUnavailableError: No available formula with the name "…/pulse"`.
+
+The v1.1.1 release notes must therefore say, in the installation section:
+
+```bash
+brew uninstall pulse && brew install ciphera-net/tap/pulse
+```
+
+`pulse upgrade` already prints `brew upgrade pulse` for both layouts, so nobody's binary gets
+overwritten in the meantime — but `brew upgrade` alone will not move them across.
 
 ## Pre-release checklist
 
 - [ ] `go test ./...` green, and the mutation battery still red-on-mutation if guards were touched
 - [ ] The cross-compile and smoke pipelines are green on `main`
+- [ ] `goreleaser check` exits **0** (not "printed something reassuring")
+- [ ] `goreleaser release --snapshot --clean --skip=publish,sign` succeeded, and the cask in
+      `dist/homebrew/Casks/pulse.rb` still has `linux_amd64` and `linux_arm64` URLs
 - [ ] `README.md` matches the actual command surface, including any new flags
 - [ ] The version in any documentation example is not a stale one
 - [ ] For a **first** release: `release_github_token` exists
+- [ ] **For v1.1.1 only:** the tap migration above is scheduled — `Formula/pulse.rb` deleted right
+      after the release, and the reinstall line in the release notes

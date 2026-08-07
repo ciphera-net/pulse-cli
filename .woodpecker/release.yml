@@ -41,21 +41,26 @@ steps:
       TAP_GITHUB_TOKEN:
         from_secret: release_github_token
     commands:
-      # * cosign v2, pinned ahead of the v3 the image ships.
+      # * cosign v2, pinned ahead of the v3 the image ships. KEPT after a full
+      # * re-test on 07-08-2026 — see RELEASING.md for the table of every
+      # * attempt and its exact error.
       # *
-      # * This is not tidiness. cosign v3 CHANGED THE SIGNING CONTRACT: with
-      # * --tlog-upload=false it refuses to run without --bundle
-      # * --new-bundle-format, and signatures it does produce are not readable by
-      # * the `verify-blob --signature` command this project's README documents.
+      # * This is not tidiness. cosign v3 CHANGED THE SIGNING CONTRACT. v3.1.2
+      # * (what this image carries now) can sign without a transparency log —
+      # * via a `signing-config` file with no Rekor service — but ONLY into a
+      # * Sigstore bundle. There is no combination of flags that still emits the
+      # * detached `.sig` that the `verify-blob --signature` command in this
+      # * project's README reads; `--output-signature` errors out in every one.
       # *
-      # * Verified inside this exact image before pinning: with v3 the sign step
-      # * errors and nothing is written; with v2.4.1 it signs, verifies against
-      # * the committed public key, and rejects a modified file.
+      # * The pin costs users nothing: a v2.4.1 signature verifies `Verified OK`
+      # * under BOTH v2.4.1 and v3.1.2 with the README command, and both reject a
+      # * tampered archive. Only the signer has to be v2.
       # *
       # * Worth noting how this could have shipped silently — a tamper test
       # * "passes" when signing failed entirely, because there is no valid
-      # * signature for anything. Any check that a bad input is rejected is
-      # * meaningless unless the good input was accepted first.
+      # * signature for anything. Under v3 the good archive and the tampered one
+      # * both "failed", with the same parse error. Any check that a bad input is
+      # * rejected is meaningless unless the good input was accepted first.
       - export GOBIN=/tmp/bin
       - go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
       - export PATH=/tmp/bin:$PATH
@@ -86,16 +91,15 @@ steps:
         [ -n "$TAP_GITHUB_TOKEN" ]   || { echo "missing required secret: TAP_GITHUB_TOKEN"; exit 1; }
         echo "ok  all four secrets present"
       # * Validate the goreleaser config BEFORE building. `check` exits non-zero
-      # * on deprecation warnings as well as errors, and `brews` is deliberately
-      # * deprecated-but-kept (see .goreleaser.yaml), so the pass condition is the
-      # * "configuration is valid" line rather than the exit code. A real schema
-      # * error does not produce that line.
-      - |
-        out=$(goreleaser check 2>&1) || true
-        echo "$out"
-        echo "$out" | grep -q "configuration is valid" || {
-          echo "goreleaser config is INVALID — refusing to build"; exit 1; }
-        echo "ok  goreleaser config valid"
+      # * on deprecation warnings as well as errors, which is wanted here: a tag
+      # * is the worst moment to discover a setting was removed.
+      # *
+      # * Was a grep for the "configuration is valid" line, because `brews` was
+      # * deliberately deprecated-but-kept. `brews` is gone (migrated to
+      # * homebrew_casks, 07-08-2026), the config is deprecation-free, and the
+      # * exit code is the honest gate again.
+      - goreleaser check
+      - echo "ok  goreleaser config valid, with no deprecated properties"
       # * Verify the committed public key matches the private key we are about to
       # * sign with, BEFORE producing anything. A mismatch here means every
       # * published signature fails verification against the key the README tells
