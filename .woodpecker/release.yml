@@ -35,16 +35,37 @@ steps:
       # * Pinned versions, not @latest. A release pipeline that resolves its own
       # * tooling at run time can produce a different artefact for the same tag,
       # * which defeats the point of signing it.
-      - go install github.com/goreleaser/goreleaser/v2@v2.5.0
+      - go install github.com/goreleaser/goreleaser/v2@v2.17.1
       - go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
       # * Fail before building rather than after: a missing secret otherwise
       # * surfaces as a signing error at the very end, with six built archives
       # * and nothing to sign them with.
+      # *
+      # * Written out one variable at a time, with NO indirection. The first
+      # * version looped over names and used `eval "val=\$$v"` — and Woodpecker
+      # * substitutes `$$` to `$` before the shell ever sees it, so what actually
+      # * ran was `eval "val=\$v"`, which assigns the variable's NAME to val. That
+      # * is never empty, so the guard passed unconditionally: a check that looked
+      # * like it verified three secrets and verified nothing.
+      # *
+      # * Three plain lines cannot be eaten by a templating layer.
       - |
-        for v in COSIGN_PRIVATE_KEY COSIGN_PASSWORD GITHUB_TOKEN; do
-          eval "val=\$$v"
-          [ -n "$val" ] || { echo "missing required secret: $v"; exit 1; }
-        done
+        [ -n "$COSIGN_PRIVATE_KEY" ] || { echo "missing required secret: COSIGN_PRIVATE_KEY"; exit 1; }
+        [ -n "$COSIGN_PASSWORD" ]    || { echo "missing required secret: COSIGN_PASSWORD"; exit 1; }
+        [ -n "$GITHUB_TOKEN" ]       || { echo "missing required secret: GITHUB_TOKEN"; exit 1; }
+        [ -n "$TAP_GITHUB_TOKEN" ]   || { echo "missing required secret: TAP_GITHUB_TOKEN"; exit 1; }
+        echo "ok  all four secrets present"
+      # * Validate the goreleaser config BEFORE building. `check` exits non-zero
+      # * on deprecation warnings as well as errors, and `brews` is deliberately
+      # * deprecated-but-kept (see .goreleaser.yaml), so the pass condition is the
+      # * "configuration is valid" line rather than the exit code. A real schema
+      # * error does not produce that line.
+      - |
+        out=$(goreleaser check 2>&1) || true
+        echo "$out"
+        echo "$out" | grep -q "configuration is valid" || {
+          echo "goreleaser config is INVALID — refusing to build"; exit 1; }
+        echo "ok  goreleaser config valid"
       # * Verify the committed public key matches the private key we are about to
       # * sign with, BEFORE producing anything. A mismatch here means every
       # * published signature fails verification against the key the README tells

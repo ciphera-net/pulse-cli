@@ -35,6 +35,36 @@ steps:
           echo "ok  $target"
         done
 
+  # * Validate the release configuration on every PR, not at tag time.
+  # *
+  # * v1.0.0 failed on a schema error — `checksums:` where goreleaser wants
+  # * `checksum:` — which cost a tag, a pipeline run and a re-tag. The release
+  # * pipeline should not be the first place this config is parsed.
+  # *
+  # * The prebuilt image rather than `go install`: goreleaser is a large build
+  # * and this needs to be cheap enough to run on every pull request. Pinned to
+  # * the same version release.yml installs — a check against a different
+  # * version validates the wrong schema.
+  # *
+  # * `check` exits non-zero on DEPRECATIONS as well as errors, and `brews` is
+  # * deliberately deprecated-but-kept (see .goreleaser.yaml), so the pass
+  # * condition is the "configuration is valid" line. A real schema error does
+  # * not produce it.
+  goreleaser-config:
+    image: ghcr.io/goreleaser/goreleaser:v2.17.1
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 256Mi, cpu: 100m }
+          limits: { memory: 1Gi }
+    commands:
+      - |
+        out=$(goreleaser check 2>&1) || true
+        echo "$out"
+        echo "$out" | grep -q "configuration is valid" || {
+          echo "goreleaser config is INVALID"; exit 1; }
+        echo "ok  goreleaser config valid"
+
   # * A release archive that unpacks to a binary which cannot start is a bad
   # * release, and `go test` cannot tell you that — it never links a main. This
   # * runs the real artefact.

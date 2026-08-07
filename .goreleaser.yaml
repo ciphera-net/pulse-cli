@@ -39,7 +39,7 @@ archives:
       - README.md
       - LICENSE
 
-checksums:
+checksum:
   name_template: "checksums.txt"
 
 # * Signed with cosign against a key held in Vault and injected by Woodpecker.
@@ -80,6 +80,19 @@ signs:
       - "${artifact}"
       - "--yes"
 
+# * `brews` (a Homebrew FORMULA) rather than `homebrew_casks`, despite goreleaser
+# * deprecating it.
+# *
+# * Casks are macOS-only. A formula installs on macOS AND on Linux through
+# * Linuxbrew, and Linux is where this tool is most likely to be scripted — the
+# * CI case the PULSE_API_KEY fallback exists for. Switching to a cask to clear a
+# * deprecation warning would silently drop `brew install` for half the intended
+# * users.
+# *
+# * Deprecated is not removed, and the goreleaser version is pinned in
+# * .woodpecker/release.yml, so the day it is removed is a day we choose. Revisit
+# * if Homebrew gains cask support on Linux, or if the Linux install path turns
+# * out to be unused.
 brews:
   - name: pulse
     # * ciphera-net/homebrew-tap, not ciphera/homebrew-tap. Homebrew resolves

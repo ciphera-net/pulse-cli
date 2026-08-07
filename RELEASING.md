@@ -106,6 +106,25 @@ Reversing this is a one-line change to `.goreleaser.yaml` plus a README edit.
 `main.version` is set by ldflags from the tag. A binary built any other way reports `dev`, which is
 the intended answer — a locally built binary is not a release, and it should not claim to be one.
 
+## Validate before tagging
+
+`goreleaser check` runs on every pull request (`.woodpecker/build.yml`) and again in the release
+pipeline. To run the whole thing locally without publishing anything:
+
+```bash
+go install github.com/goreleaser/goreleaser/v2@v2.17.1
+goreleaser check
+goreleaser release --snapshot --clean --skip=publish,sign
+```
+
+The snapshot builds all six targets, writes the archives and checksums, and generates the Homebrew
+formula into `dist/` — everything the real release does except publishing and signing. **v1.0.0's
+first attempt failed on a config schema error that this would have caught in two seconds.**
+
+`goreleaser check` exits non-zero on deprecation warnings as well as errors, and `brews` is
+deliberately deprecated-but-kept — so both pipelines test for the `configuration is valid` line
+rather than the exit code.
+
 ## Pre-release checklist
 
 - [ ] `go test ./...` green, and the mutation battery still red-on-mutation if guards were touched
