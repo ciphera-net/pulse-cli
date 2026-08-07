@@ -132,6 +132,22 @@ does and does not skip.
 
 Reversing this is a one-line change to `.goreleaser.yaml` plus a README edit.
 
+**Re-reviewed and reaffirmed 07-08-2026.** The decision stands: sovereignty wins, the log stays off.
+Recording it here so the flag reads as a choice rather than an oversight and is not "fixed" later by
+someone who assumes it was forgotten.
+
+One thing changed that raises the stakes. `pulse upgrade` (v1.1.0) verifies release signatures
+against a copy of `cosign.pub` **embedded in the binary**, so with no transparency log that embedded
+key is the *entire* trust root for self-update. Two consequences:
+
+- **Rotating the signing key breaks `pulse upgrade` for every already-installed binary**, because
+  they carry the old key and will correctly reject artifacts signed with the new one. Those users
+  must reinstall through their package manager. See "Rotating it" above — the embedded copy at
+  `internal/upgrade/cosign.pub` must be updated in the same change, and a test fails if the two
+  copies drift.
+- A compromise of the signing key would be undetectable after the fact, since there is no append-only
+  record to audit against. That is the price of the sovereignty call, stated plainly.
+
 ## Version stamping
 
 `main.version` is set by ldflags from the tag. A binary built any other way reports `dev`, which is
