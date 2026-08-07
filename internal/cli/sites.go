@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -44,6 +45,30 @@ func newSitesListCmd(app *App) *cobra.Command {
 			if len(res.Data) == 0 {
 				p.Note("This key is not scoped to any site.")
 				return nil
+			}
+
+			// * CSV gets machine columns, not the display table.
+			// *
+			// * The table shows "13 hr ago" because that is what a person reads at
+			// * a glance; a spreadsheet needs the timestamp. And the column names
+			// * are the API's own field names, so a CSV and a --json body describe
+			// * the same site with the same words — the alternative is a user
+			// * mapping DOMAIN to domain by eye and guessing at LAST EVENT.
+			if p.Mode == render.ModeCSV {
+				rows := make([][]string, 0, len(res.Data))
+				for _, s := range res.Data {
+					lastEvent := ""
+					if s.LastEventAt != nil {
+						lastEvent = s.LastEventAt.UTC().Format(time.RFC3339)
+					}
+					rows = append(rows, []string{
+						s.ID, s.Slug, s.Domain, s.Name, s.Timezone,
+						lastEvent, s.CreatedAt.UTC().Format(time.RFC3339),
+					})
+				}
+				return p.CSVRecords(
+					[]string{"id", "slug", "domain", "name", "timezone", "last_event_at", "created_at"},
+					rows)
 			}
 
 			defaultID, _ := app.Config.SiteFor(app.Profile)

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strconv"
+
 	"github.com/spf13/cobra"
 
 	"github.com/ciphera-net/pulse-cli/internal/client"
@@ -59,6 +61,25 @@ func newStatsCmd(app *App) *cobra.Command {
 				return nil
 			}
 
+			// * CSV carries the API's field names and raw values; the table
+			// * carries human labels and formatted ones. A spreadsheet cannot
+			// * compute on "1m 47s" or "62.4%", and a reader does not want
+			// * 107.3333. Same numbers, two audiences.
+			// *
+			// * A withheld metric is an EMPTY cell in CSV — not 0, and not "—",
+			// * which a spreadsheet would import as text and refuse to sum. Empty
+			// * is the one value every tool already reads as "no data".
+			if p.Mode == render.ModeCSV {
+				return p.CSVRecords([]string{"metric", "value"}, [][]string{
+					{"visitors", csvInt(res.Data.Visitors)},
+					{"pageviews", csvInt(res.Data.Pageviews)},
+					{"bounce_rate", csvFloat(res.Data.BounceRate)},
+					{"avg_duration", csvFloat(res.Data.AvgDuration)},
+					{"avg_scroll_depth", csvFloat(res.Data.AvgScrollDepth)},
+					{"avg_visible_duration", csvFloat(res.Data.AvgVisibleDuration)},
+				})
+			}
+
 			rows := [][]string{
 				{"Visitors", render.Metric(res.Data.Visitors)},
 				{"Pageviews", render.Metric(res.Data.Pageviews)},
@@ -66,10 +87,6 @@ func newStatsCmd(app *App) *cobra.Command {
 				{"Avg duration", render.Duration(res.Data.AvgDuration)},
 				{"Avg scroll depth", render.Percent(res.Data.AvgScrollDepth)},
 				{"Avg visible time", render.Duration(res.Data.AvgVisibleDuration)},
-			}
-
-			if p.Mode == render.ModeCSV {
-				return p.CSVRecords([]string{"metric", "value"}, rows)
 			}
 
 			// * The header prints meta.range — what the SERVER queried — not the
@@ -119,4 +136,24 @@ func parseFilters(exprs []string) ([]client.Filter, error) {
 		return nil, usageErr("%s", err.Error())
 	}
 	return filters, nil
+}
+
+// csvInt and csvFloat render a possibly-withheld metric for CSV.
+//
+// A withheld value is an EMPTY cell. Not 0, which is a number the server refused
+// to state; and not the em dash the table uses, which a spreadsheet imports as
+// text and then refuses to sum — turning a privacy marker into a broken column.
+// Empty is what every tool already reads as "no data".
+func csvInt(v *int) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.Itoa(*v)
+}
+
+func csvFloat(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*v, 'f', -1, 64)
 }
