@@ -58,6 +58,7 @@ $ pulse sites use ciphera.net
 | `pulse stats` | Aggregate metrics over a range |
 | `pulse realtime` | Visitors active right now |
 | `pulse export daily · pages` | Bulk CSV or JSON |
+| `pulse upgrade [--check]` | Install the newest release |
 
 Every command takes `--site` to override the default and `--profile` to switch between stored keys.
 
@@ -175,6 +176,49 @@ For CI, where no keychain exists, export `PULSE_API_KEY`. It takes precedence ov
 an explicit export always wins, and `pulse auth status` tells you which one is in use.
 
 `~/.config/pulse/config.toml` holds preferences only — default site, profiles. Never a credential.
+
+## Upgrading
+
+```console
+$ pulse upgrade --check
+Update available: v1.0.0 → v1.1.0
+https://github.com/ciphera-net/pulse-cli/releases/tag/v1.1.0
+Run `pulse upgrade` to install it.
+
+$ pulse upgrade
+Downloading pulse_1.1.0_darwin_arm64.tar.gz (2.8 MB)…
+Verifying the release signature…
+✓ pulse v1.1.0 installed at /usr/local/bin/pulse.
+```
+
+The archive comes from GitHub's **public** release feed: no API key is sent, and no Pulse quota is
+spent. Its cosign signature is checked against the key compiled into the binary you are already
+running — not one fetched at the same time as the archive — and a signature that does not verify
+means nothing is written at all.
+
+**`--check` exits `0` whether or not an update exists.** It is meant for a cron job, a Makefile or an
+agent loop, and all of those treat a non-zero exit as something to escalate; an available upgrade is
+news, not a failure. Only a check that could not be *performed* exits non-zero. `--json` gives it to
+you as an object:
+
+```console
+$ pulse upgrade --check --json
+{"current":"v1.0.0","latest":"v1.1.0","update_available":true,"install_method":"binary",
+ "path":"/usr/local/bin/pulse","release_url":"…","action":"checked"}
+```
+
+**A pulse installed by a package manager is left alone.** Homebrew and `go install` each keep their
+own record of what version they put there, and the Cellar is writable — so replacing the file in
+place *works*, and then `brew list --versions pulse` describes a binary that no longer exists and the
+next `brew upgrade` quietly reverts you. `pulse upgrade` detects both and prints what to run instead:
+
+```console
+$ pulse upgrade
+pulse v1.0.0 → v1.1.0 is available; installed via Homebrew, so run: brew upgrade pulse
+```
+
+If the install directory is not writable, the command says so, names the path, and stops. **It never
+uses sudo** — and never suggests you do.
 
 ## Verifying a release
 

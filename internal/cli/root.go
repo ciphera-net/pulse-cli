@@ -103,6 +103,7 @@ func Execute() int {
 		newStatsCmd(app),
 		newRealtimeCmd(app),
 		newExportCmd(app),
+		newUpgradeCmd(app),
 	)
 
 	// * Cobra writes help, usage and --version itself. Pointing it at the

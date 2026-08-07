@@ -105,9 +105,19 @@ archive fails**. A signature that verifies proves nothing if it also verifies so
 3. Update the two Woodpecker secrets.
 4. **Commit the new `cosign.pub` in the same change.** The preflight check will otherwise stop the
    next release, which is the intended behaviour but a confusing way to be reminded.
+5. **Copy it to `internal/upgrade/cosign.pub` too.** `pulse upgrade` verifies against a key compiled
+   into the binary — fetching the key at upgrade time would mean whoever can serve a modified archive
+   can serve the key that signs it. `TestEmbeddedKeyMatchesRepoRoot` fails if the two copies drift,
+   so this is a failing test rather than a silent divergence, but it is one more file to update.
 
 Old signatures do not re-verify under a new key. Note the rotation in the release notes so anyone
 verifying an older archive knows which key to use.
+
+A rotation also breaks `pulse upgrade` for everyone still running a binary built with the old key:
+their embedded copy will refuse the newly signed archive, correctly and unhelpfully. They are not
+stranded — `brew upgrade`, `go install …@latest` and a manual download all still work — but the
+release notes for a rotation should say so, because "signature does not match the Pulse release key"
+reads like a compromise rather than a key change.
 
 ## No transparency log
 
