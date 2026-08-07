@@ -86,9 +86,17 @@ func newExportSubCmd(app *App, kind client.ExportKind, use, short string) *cobra
 			// * already published, and would drop any column added later.
 			app.Printer.Out.Write(body)
 
+			// * Always say which site and which dates, on stderr. A CSV
+			// * redirected to a file has no header identifying either, and
+			// * "which site was this export from?" is the question asked of a
+			// * month-old file. The timezone is only known when the server
+			// * resolved the range for us; with explicit dates there is nothing
+			// * to disambiguate, because the caller supplied the dates.
 			p := app.Printer
 			if tz != "" {
 				p.Note("%s · %s to %s (%s)", label, fromDate, toDate, tz)
+			} else {
+				p.Note("%s · %s to %s", label, fromDate, toDate)
 			}
 			if s, ok := client.Suppressed(header); ok {
 				p.Note("%s", render.ExportSuppressionNote(s.Rows, s.Pageviews, s.MinCellSize))
