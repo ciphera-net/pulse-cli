@@ -20,11 +20,12 @@ no business being available to a pull request from a fork.
 |---|---|---|
 | `cosign_private_key` | Vault `kv/pulse-cli/cosign` → `private_key` | ✅ configured |
 | `cosign_password` | Vault `kv/pulse-cli/cosign` → `password` | ✅ configured |
-| `release_github_token` | A GitHub token, Contents:write on `pulse-cli` + `homebrew-tap` | ⚠️ **not yet configured — browser only, see below** |
+| `release_github_token` | A GitHub token, Contents:write on `pulse-cli` + `homebrew-tap` | ✅ configured 07-08-2026 (fine-grained; browser-only to create, see below) |
 
 ### Why this one cannot be automated
 
-`release_github_token` has to be created **in a browser**. There is no way around it:
+Recorded for whoever has to **rotate** it. `release_github_token` has to be created **in a browser**.
+There is no way around it:
 
 - **GitHub removed programmatic PAT creation.** The old `POST /authorizations` endpoint returns
   `404`, and there is no REST endpoint for fine-grained tokens.
