@@ -263,3 +263,52 @@ func TestQuotaIsReadFromHeaders(t *testing.T) {
 		t.Error("absent quota headers must report ok=false rather than zero")
 	}
 }
+
+// * The server sends the suppression headers whenever the floor was in force,
+// * INCLUDING as an explicit "0" — so a client can read "nothing was withheld"
+// * rather than inferring it from absence. An explicit zero must therefore
+// * come back present-with-zero, not vanish. This function used to return
+// * false on rows==0, silently rebuilding the infer-from-absence ambiguity.
+func TestSuppressedExplicitZeroIsPresent(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Pulse-Suppressed-Rows", "0")
+	h.Set("X-Pulse-Suppressed-Pageviews", "0")
+	h.Set("X-Pulse-Min-Cell-Size", "5")
+
+	s, ok := Suppressed(h)
+	if !ok {
+		t.Fatal("explicit-zero suppression headers were dropped as absent")
+	}
+	if s.Rows != 0 || s.Pageviews != 0 || s.MinCellSize != 5 {
+		t.Errorf("explicit zeros mis-read: %+v", s)
+	}
+}
+
+// * No headers at all means the floor was not in force (an unfiltered pages
+// * export, a pre-floor server). That — and only that — is "no signal".
+func TestSuppressedAbsentHeadersMeanNoSignal(t *testing.T) {
+	if s, ok := Suppressed(http.Header{}); ok {
+		t.Errorf("absent headers reported as present: %+v", s)
+	}
+}
+
+// * The daily export signals with X-Pulse-Suppressed-Day-Metrics instead of
+// * Rows/Pageviews. Its explicit zero carries the same weight.
+func TestSuppressedReadsDailyExportHeaders(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Pulse-Suppressed-Day-Metrics", "3")
+	h.Set("X-Pulse-Min-Cell-Size", "5")
+
+	s, ok := Suppressed(h)
+	if !ok {
+		t.Fatal("daily-export suppression headers were not recognised")
+	}
+	if s.DayMetrics != 3 || s.Rows != 0 || s.MinCellSize != 5 {
+		t.Errorf("daily headers mis-read: %+v", s)
+	}
+
+	h.Set("X-Pulse-Suppressed-Day-Metrics", "0")
+	if _, ok := Suppressed(h); !ok {
+		t.Error("an explicit-zero day-metrics header was dropped as absent")
+	}
+}

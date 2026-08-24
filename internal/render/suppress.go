@@ -101,6 +101,22 @@ func ExportSuppressionNote(rows, pageviews, minCell int) string {
 		rows, plural(rows, "page", "pages"), minCell, verb(rows), Thousands(pageviews))
 }
 
+// ExportDayMetricsNote is the daily export's counterpart: the floor there
+// withholds the four per-session metrics of any day bucket covering fewer
+// than min_cell_size visitors (day COUNTS stay — a whole-site day count is an
+// aggregate). Those cells arrive empty, and an empty cell with no explanation
+// reads as a rendering bug and gets reported as one.
+func ExportDayMetricsNote(dayMetrics, minCell int) string {
+	if dayMetrics == 0 {
+		return ""
+	}
+	if minCell == 0 {
+		minCell = publicv1.MinCellSize
+	}
+	return fmt.Sprintf("%d day %s fewer than %d visitors; their per-session metrics are withheld (empty cells, not zero).",
+		dayMetrics, plural(dayMetrics, "bucket covers", "buckets cover"), minCell)
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return one

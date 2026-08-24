@@ -103,24 +103,44 @@ func Export(ctx context.Context, c *Client, siteID string, kind ExportKind, from
 }
 
 // Suppression describes what an export withheld. CSV has nowhere to put a meta
-// object, so these arrive as headers.
+// object, so these arrive as headers. The pages export sends Rows/Pageviews;
+// the daily export sends DayMetrics — the count of day buckets whose four
+// per-session metrics were withheld (their CSV cells are empty, not zero).
 type Suppression struct {
 	Rows        int
 	Pageviews   int
+	DayMetrics  int
 	MinCellSize int
 }
 
 // Suppressed reads the X-Pulse-Suppressed-* headers off an export response.
+//
+// PRESENCE is the signal, not the value. The server emits these headers
+// whenever the privacy floor was in force — including as an explicit "0",
+// precisely so a client can read "nothing was withheld" instead of inferring
+// it from the headers' absence. Treating 0 as absent (as this function once
+// did) rebuilt exactly the ambiguity the explicit zero exists to remove.
 func Suppressed(h http.Header) (Suppression, bool) {
-	rows := headerInt(h, "X-Pulse-Suppressed-Rows")
-	if rows == 0 {
-		return Suppression{}, false
+	present := false
+	read := func(name string) int {
+		v := h.Get(name)
+		if v == "" {
+			return 0
+		}
+		present = true
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+			return 0
+		}
+		return n
 	}
-	return Suppression{
-		Rows:        rows,
-		Pageviews:   headerInt(h, "X-Pulse-Suppressed-Pageviews"),
-		MinCellSize: headerInt(h, "X-Pulse-Min-Cell-Size"),
-	}, true
+	s := Suppression{
+		Rows:        read("X-Pulse-Suppressed-Rows"),
+		Pageviews:   read("X-Pulse-Suppressed-Pageviews"),
+		DayMetrics:  read("X-Pulse-Suppressed-Day-Metrics"),
+		MinCellSize: read("X-Pulse-Min-Cell-Size"),
+	}
+	return s, present
 }
 
 // Filter is one dimension==value or dimension!=value constraint.
@@ -216,13 +236,4 @@ func knownDimension(d string) bool {
 		}
 	}
 	return false
-}
-
-func headerInt(h http.Header, name string) int {
-	var n int
-	_, err := fmt.Sscanf(h.Get(name), "%d", &n)
-	if err != nil {
-		return 0
-	}
-	return n
 }
