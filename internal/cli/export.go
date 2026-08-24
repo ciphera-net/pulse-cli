@@ -109,8 +109,15 @@ func newExportSubCmd(app *App, kind client.ExportKind, use, short string) *cobra
 			} else {
 				p.Note("%s · %s to %s", label, fromDate, toDate)
 			}
+			// * Both notes return "" for an explicit zero — the header said
+			// * "nothing withheld", and a permanent privacy footer is noise.
 			if s, ok := client.Suppressed(header); ok {
-				p.Note("%s", render.ExportSuppressionNote(s.Rows, s.Pageviews, s.MinCellSize))
+				if note := render.ExportSuppressionNote(s.Rows, s.Pageviews, s.MinCellSize); note != "" {
+					p.Note("%s", note)
+				}
+				if note := render.ExportDayMetricsNote(s.DayMetrics, s.MinCellSize); note != "" {
+					p.Note("%s", note)
+				}
 			}
 			warnQuota(app, header)
 			return nil

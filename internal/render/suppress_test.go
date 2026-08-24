@@ -129,3 +129,28 @@ func TestExportNoteNamesVisitorsAsTheThresholdAndPageviewsAsTheTotal(t *testing.
 		t.Error("an export that withheld nothing must produce no note")
 	}
 }
+
+// * An explicit zero from the daily export means "no day bucket was floored" —
+// * silence, for the same reason an unsuppressed pages export gets no note.
+func TestDayMetricsNoteZeroIsSilent(t *testing.T) {
+	if note := ExportDayMetricsNote(0, 5); note != "" {
+		t.Errorf("zero withheld day buckets produced a note: %q", note)
+	}
+}
+
+// * A floored day bucket arrives as empty CSV cells; the note must say how
+// * many and why, using the server's threshold, and must not read as zero.
+func TestDayMetricsNoteReportsWithheldBuckets(t *testing.T) {
+	note := ExportDayMetricsNote(3, 25)
+	for _, want := range []string{"3 day buckets", "25", "not zero"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note missing %q: %q", want, note)
+		}
+	}
+	if strings.Contains(note, "than 5 ") {
+		t.Errorf("note quoted the hardcoded default instead of the server's figure: %q", note)
+	}
+	if one := ExportDayMetricsNote(1, 25); !strings.Contains(one, "1 day bucket covers") {
+		t.Errorf("singular note misconjugated: %q", one)
+	}
+}
