@@ -46,5 +46,9 @@ steps:
       # * produced a confusing red for the wrong reason.
       - go list -deps ./internal/mcptools > /dev/null
       - go list -deps ./internal/mcpwrap > /dev/null
-      - if go list -deps ./internal/mcptools | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN: internal/mcptools imports the MCP SDK"; exit 1; fi
-      - if go list -deps ./internal/mcpwrap | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN: internal/mcpwrap imports the MCP SDK"; exit 1; fi
+      # * Single-quoted as whole YAML scalars. An unquoted command containing
+      # * ": " is parsed as a MAPPING, not a string — which is how the first
+      # * version of this guard failed the pipeline at compile time rather than
+      # * running at all.
+      - 'if go list -deps ./internal/mcptools | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN - internal/mcptools imports the MCP SDK"; exit 1; fi'
+      - 'if go list -deps ./internal/mcpwrap | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN - internal/mcpwrap imports the MCP SDK"; exit 1; fi' 
