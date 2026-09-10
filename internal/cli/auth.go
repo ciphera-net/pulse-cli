@@ -12,9 +12,9 @@ import (
 	"golang.org/x/term"
 
 	"github.com/ciphera-net/pulse-api-go/publicv1"
-	"github.com/ciphera-net/pulse-cli/internal/client"
-	"github.com/ciphera-net/pulse-cli/internal/credentials"
 	"github.com/ciphera-net/pulse-cli/internal/render"
+	"github.com/ciphera-net/pulse-client-go/client"
+	"github.com/ciphera-net/pulse-client-go/credentials"
 )
 
 func newAuthCmd(app *App) *cobra.Command {

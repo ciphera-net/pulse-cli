@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	"github.com/ciphera-net/pulse-api-go/publicv1"
-	"github.com/ciphera-net/pulse-cli/internal/client"
+	"github.com/ciphera-net/pulse-client-go/client"
 )
 
 // ReasonPrivacyFloor is the machine-readable cause of a suppression.

@@ -15,10 +15,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ciphera-net/pulse-cli/internal/client"
 	"github.com/ciphera-net/pulse-cli/internal/config"
-	"github.com/ciphera-net/pulse-cli/internal/credentials"
 	"github.com/ciphera-net/pulse-cli/internal/render"
+	"github.com/ciphera-net/pulse-client-go/client"
+	"github.com/ciphera-net/pulse-client-go/credentials"
 )
 
 // Version is stamped at build time.
