@@ -6,8 +6,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/ciphera-net/pulse-cli/internal/client"
 	"github.com/ciphera-net/pulse-cli/internal/render"
+	"github.com/ciphera-net/pulse-client-go/client"
 )
 
 // failingWriter refuses every write, the way a full disk (ENOSPC) or a

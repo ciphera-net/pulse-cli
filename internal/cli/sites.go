@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ciphera-net/pulse-cli/internal/client"
 	"github.com/ciphera-net/pulse-cli/internal/render"
+	"github.com/ciphera-net/pulse-client-go/client"
 )
 
 func newSitesCmd(app *App) *cobra.Command {

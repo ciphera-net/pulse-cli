@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ciphera-net/pulse-cli/internal/client"
 	"github.com/ciphera-net/pulse-cli/internal/mcpwrap"
+	"github.com/ciphera-net/pulse-client-go/client"
 )
 
 // Deps is everything a handler is allowed to reach.

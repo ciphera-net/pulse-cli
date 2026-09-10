@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ciphera-net/pulse-cli/internal/client"
 	"github.com/ciphera-net/pulse-cli/internal/render"
 	"github.com/ciphera-net/pulse-cli/internal/upgrade"
+	"github.com/ciphera-net/pulse-client-go/client"
 )
 
 // feed serves a GitHub release feed. No test in this package touches the
