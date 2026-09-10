@@ -104,6 +104,7 @@ func Execute() int {
 		newRealtimeCmd(app),
 		newExportCmd(app),
 		newUpgradeCmd(app),
+		newMCPCmd(app),
 	)
 
 	// * Cobra writes help, usage and --version itself. Pointing it at the
