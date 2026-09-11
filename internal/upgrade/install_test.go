@@ -31,17 +31,17 @@ func TestDetectIdentifiesTheInstallMethod(t *testing.T) {
 		{
 			name: "homebrew formula on apple silicon",
 			path: "/opt/homebrew/Cellar/pulse/1.0.0/bin/pulse",
-			want: MethodHomebrew,
+			want: MethodHomebrewFormula,
 		},
 		{
 			name: "homebrew formula on intel macos",
 			path: "/usr/local/Cellar/pulse/1.0.0/bin/pulse",
-			want: MethodHomebrew,
+			want: MethodHomebrewFormula,
 		},
 		{
 			name: "homebrew formula on linux",
 			path: "/home/linuxbrew/.linuxbrew/Cellar/pulse/1.0.0/bin/pulse",
-			want: MethodHomebrew,
+			want: MethodHomebrewFormula,
 		},
 		{
 			name: "homebrew cask on apple silicon",
@@ -108,7 +108,26 @@ func TestDetectIdentifiesTheInstallMethod(t *testing.T) {
 // * managed install that prints "cannot upgrade" and stops is a dead end.
 func TestInstructionNamesWhatToRunInstead(t *testing.T) {
 	if got := MethodHomebrew.Instruction(); !strings.Contains(got, "brew upgrade") {
-		t.Errorf("Homebrew instruction = %q, want it to name `brew upgrade`", got)
+		t.Errorf("Homebrew cask instruction = %q, want it to name `brew upgrade`", got)
+	}
+
+	// * A FORMULA install must NOT be told to run `brew upgrade`. The tap deleted
+	// * Formula/pulse.rb at v1.1.1, so that command silently does nothing and the
+	// * user stays pinned to the version they already have — measured on a real
+	// * v1.0.0 install that two releases had failed to move. The only thing that
+	// * works is uninstall-and-reinstall, so that is what must be printed.
+	fi := MethodHomebrewFormula.Instruction()
+	if strings.Contains(fi, "brew upgrade") {
+		t.Errorf("formula instruction = %q — `brew upgrade` does NOTHING for a formula "+
+			"install whose formula was removed from the tap", fi)
+	}
+	for _, want := range []string{"brew uninstall --formula pulse", "--cask", "ciphera-net/tap/pulse"} {
+		if !strings.Contains(fi, want) {
+			t.Errorf("formula instruction = %q, want it to contain %q", fi, want)
+		}
+	}
+	if MethodHomebrewFormula.Instruction() == MethodHomebrew.Instruction() {
+		t.Error("the two Homebrew layouts share one instruction again — that is the bug")
 	}
 	if got := MethodGoInstall.Instruction(); !strings.Contains(got, "go install github.com/ciphera-net/pulse-cli/cmd/pulse@latest") {
 		t.Errorf("go-install instruction = %q, want the full module path", got)
@@ -310,9 +329,13 @@ func TestExecutablePathResolvesSymlinks(t *testing.T) {
 			if Detect(link) != MethodBinary {
 				t.Fatal("precondition: the unresolved symlink should look like a plain binary")
 			}
-			if got := Detect(resolved); got != MethodHomebrew {
+			want := MethodHomebrew
+			if strings.Contains(filepath.ToSlash(resolved), "/Cellar/") {
+				want = MethodHomebrewFormula
+			}
+			if got := Detect(resolved); got != want {
 				t.Errorf("Detect(%q) = %q, want %q — resolving the symlink is what exposes the %s",
-					resolved, got, MethodHomebrew, l.explain)
+					resolved, got, want, l.explain)
 			}
 		})
 	}

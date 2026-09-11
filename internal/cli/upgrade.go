@@ -190,7 +190,7 @@ func displayVersion(v string) string {
 
 func managerName(m upgrade.Method) string {
 	switch m {
-	case upgrade.MethodHomebrew:
+	case upgrade.MethodHomebrew, upgrade.MethodHomebrewFormula:
 		return "Homebrew"
 	case upgrade.MethodGoInstall:
 		return "go install"

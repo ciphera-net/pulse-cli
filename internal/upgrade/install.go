@@ -21,8 +21,28 @@ const (
 	// behind it: the only case pulse replaces itself.
 	MethodBinary Method = "binary"
 
-	// MethodHomebrew is a Homebrew install, cask or formula.
+	// MethodHomebrew is a Homebrew CASK install — the layout the tap has
+	// published since v1.1.1, and the one `brew upgrade` can actually move.
 	MethodHomebrew Method = "homebrew"
+
+	// MethodHomebrewFormula is a Homebrew FORMULA install, from before the tap
+	// migrated to a cask at v1.1.1.
+	//
+	// It is separate from MethodHomebrew because the two need DIFFERENT advice
+	// and only one of them used to get it. The tap deleted Formula/pulse.rb in
+	// the migration, so for a Cellar install `brew upgrade pulse` does nothing
+	// at all: there is no formula left to compare against, `brew outdated` does
+	// not even list it, and the user sits on whatever version they installed,
+	// indefinitely, with no error to say so. Measured 11-09-2026 on a machine
+	// still carrying a v1.0.0 formula install from August — two releases and a
+	// working `pulse upgrade` had failed to move it.
+	//
+	// Homebrew has no mechanism that migrates them: tap_migrations.json only
+	// redirects to a DIFFERENT tap, so a same-tap entry is a verified no-op
+	// (RELEASING.md records the test). The uninstall-and-reinstall line below is
+	// the only thing that works, which makes printing it the only way a stranded
+	// user ever finds out.
+	MethodHomebrewFormula Method = "homebrew-formula"
 
 	// MethodGoInstall is `go install`.
 	MethodGoInstall Method = "go-install"
@@ -70,9 +90,13 @@ func Detect(exe string) Method {
 		// * and matches the same way, which is deliberate: the tap covers Linux too.
 		// *
 		// * Cellar is the formula layout (shipped up to v1.1.0), Caskroom the cask
-		// * layout (v1.1.1 on). Both stay matched forever — a machine that
-		// * installed the formula years ago still has a Cellar path, and
-		// * `brew upgrade pulse` is the right answer for it either way.
+		// * layout (v1.1.1 on). Both stay matched forever, but they are NOT the
+		// * same answer: an earlier version of this comment claimed `brew upgrade
+		// * pulse` was right "either way", and that was measured false on
+		// * 11-09-2026 — see MethodHomebrewFormula.
+		if strings.Contains(p, "/Cellar/") {
+			return MethodHomebrewFormula
+		}
 		return MethodHomebrew
 	case strings.Contains(p, "/go/bin/"):
 		return MethodGoInstall
@@ -86,7 +110,11 @@ func Detect(exe string) Method {
 func (m Method) Instruction() string {
 	switch m {
 	case MethodHomebrew:
-		return "brew upgrade pulse"
+		return "brew upgrade --cask pulse"
+	case MethodHomebrewFormula:
+		// * Not `brew upgrade`. There is no formula in the tap any more, so that
+		// * command succeeds silently and changes nothing.
+		return "brew uninstall --formula pulse && brew install --cask ciphera-net/tap/pulse"
 	case MethodGoInstall:
 		return "go install github.com/ciphera-net/pulse-cli/cmd/pulse@latest"
 	default:
