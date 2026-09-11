@@ -305,6 +305,11 @@ this key has signed, so verification rests on trusting `cosign.pub` from this re
 - **No write tools over MCP.** `pulse mcp` exposes the same read-only surface as the rest of the
   CLI. An assistant driving it can be steered by text it reads elsewhere, and a read-only surface
   bounds the worst outcome of that at a wrong answer rather than a changed account.
+- **No roots, sampling, logging or subscriptions over MCP.** `pulse mcp` is tools-only. That is a
+  decision rather than an omission: the first three were deprecated in the 2026-07-28 protocol
+  revision, and a server that asks your assistant to run a model on your behalf, or to hand over
+  your filesystem roots, is doing something this tool has no reason to do. It answers questions
+  about your analytics and nothing else.
 
 ## Licence
 
