@@ -28,27 +28,3 @@ steps:
       # * race there would surface as an intermittent CI failure rather than as
       # * anything a reader would notice.
       - go test -race ./...
-      # * The transport seam, asserted rather than remembered.
-      # *
-      # * internal/mcptools and internal/mcpwrap must not depend on the MCP SDK.
-      # * That is what makes the local stdio server evidence about a future
-      # * hosted one: the handlers cannot tell which transport called them, so
-      # * exercising one exercises both. The day somebody imports the SDK below
-      # * the seam for convenience, the seam is gone and nothing would otherwise
-      # * notice — the code still builds and every test still passes.
-      # *
-      # * No shell variables here on purpose: Woodpecker rewrites $$ to $ before
-      # * the shell sees the command, and a guard written with indirection has
-      # * silently become a no-op in this estate before.
-      # * Loaded UNPIPED first. `go list | grep` reports grep's exit status, so a
-      # * package that fails to load would sail past the guard below while its
-      # * error text — which contains the very module path being searched for —
-      # * produced a confusing red for the wrong reason.
-      - go list -deps ./internal/mcptools > /dev/null
-      - go list -deps ./internal/mcpwrap > /dev/null
-      # * Single-quoted as whole YAML scalars. An unquoted command containing
-      # * ": " is parsed as a MAPPING, not a string — which is how the first
-      # * version of this guard failed the pipeline at compile time rather than
-      # * running at all.
-      - 'if go list -deps ./internal/mcptools | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN - internal/mcptools imports the MCP SDK"; exit 1; fi'
-      - 'if go list -deps ./internal/mcpwrap | grep -q modelcontextprotocol/go-sdk; then echo "SEAM BROKEN - internal/mcpwrap imports the MCP SDK"; exit 1; fi' 

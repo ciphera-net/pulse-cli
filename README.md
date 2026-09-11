@@ -69,42 +69,9 @@ $ pulse sites use ciphera.net
 | `pulse stats` | Aggregate metrics over a range |
 | `pulse realtime` | Visitors active right now |
 | `pulse export daily · pages` | Bulk CSV or JSON |
-| `pulse mcp` | Serve the read tools to an AI assistant (stdio) |
 | `pulse upgrade [--check]` | Install the newest release |
 
 Every command takes `--site` to override the default and `--profile` to switch between stored keys.
-
-## Using Pulse from an AI assistant
-
-`pulse mcp` serves the read tools over the Model Context Protocol, so an assistant can answer
-questions about your analytics directly. Add it to your host's configuration:
-
-```json
-{
-  "mcpServers": {
-    "pulse": { "command": "pulse", "args": ["mcp"] }
-  }
-}
-```
-
-**No API key belongs in that file.** The server reads the credential `pulse auth login` already
-stored, so your key stays in the system keychain rather than in a config file that tends to end
-up committed to a repository.
-
-Six tools are exposed, one per endpoint: `pulse_whoami`, `pulse_list_sites`, `pulse_get_stats`,
-`pulse_get_realtime`, `pulse_export_daily` and `pulse_export_pages`. All of them are read-only and
-annotated as such, and there is nothing else — see *What this deliberately does not do*.
-
-Two properties are worth knowing, because both exist to stop an assistant from telling you
-something untrue about your own data:
-
-- **A withheld figure is not sent as `null`.** When the privacy floor applies, the metric fields
-  are absent from the result entirely, replaced by a `suppression` object that says in plain words
-  that the value is not zero and may be none. A language model shown `"visitors": null` will
-  reliably write "0 visitors"; a model shown no field at all cannot.
-- **Date ranges are quoted, never computed.** The server resolves a period in the *site's*
-  timezone and echoes the resolved dates, which the tools instruct the assistant to repeat rather
-  than work out for itself.
 
 ## Reading a withheld result
 
@@ -302,14 +269,6 @@ this key has signed, so verification rests on trusting `cosign.pub` from this re
 - **No configurable API host.** A support answer beginning "just point it at…" is one somebody else
   can also give.
 - **No plugin system.** `--json` plus a shell is the extension mechanism.
-- **No write tools over MCP.** `pulse mcp` exposes the same read-only surface as the rest of the
-  CLI. An assistant driving it can be steered by text it reads elsewhere, and a read-only surface
-  bounds the worst outcome of that at a wrong answer rather than a changed account.
-- **No roots, sampling, logging or subscriptions over MCP.** `pulse mcp` is tools-only. That is a
-  decision rather than an omission: the first three were deprecated in the 2026-07-28 protocol
-  revision, and a server that asks your assistant to run a model on your behalf, or to hand over
-  your filesystem roots, is doing something this tool has no reason to do. It answers questions
-  about your analytics and nothing else.
 
 ## Licence
 

@@ -310,7 +310,6 @@ git -C "$(brew --repository ciphera-net/tap)" fetch origin && \
 brew install --cask ciphera-net/tap/pulse
 
 pulse --version          # MUST print the new version and exit 0
-pulse mcp --help         # MUST succeed — proves the subcommand shipped
 xattr -l "$(readlink "$(which pulse)")" | grep -c quarantine   # MUST be 0
 ```
 
