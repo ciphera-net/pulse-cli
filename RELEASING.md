@@ -284,6 +284,50 @@ brew uninstall pulse && brew install ciphera-net/tap/pulse
 `pulse upgrade` already prints `brew upgrade pulse` for both layouts, so nobody's binary gets
 overwritten in the meantime — but `brew upgrade` alone will not move them across.
 
+## 🔴 After the release: install it the way a user does
+
+**Not optional, and it is the step that would have caught the worst bug this project has
+shipped.** v1.1.1, v1.1.2 and v1.2.0 each published a macOS cask whose binary **could not run at
+all** — `pulse --version` printed nothing and exited **137**. A cask stages a downloaded file, so
+macOS writes `com.apple.quarantine` on it; the binary is ad-hoc signed only
+(`codesign -dv` → `Identifier=a.out`), so Gatekeeper rejects it and the kernel kills the process
+before `main()`. Brew reports success. The shell prints nothing. There is no error anywhere.
+
+Every artifact check passed the whole time, and each one was real: the cosign signature verified
+with its negative, the SHA256 matched the cask and `checksums.txt` three ways, `brew info` showed
+the new version, and the binary extracted from the tarball by hand ran perfectly — **because
+extracting a tarball by hand does not set quarantine.** Checking the artifact and installing the
+artifact are different code paths, and only one of them is the one users take.
+
+It also hid behind a blind spot worth remembering: the only machine testing carried a **formula**
+install from before the tap migration, and formulae do not carry quarantine.
+
+```bash
+# From a shell that has never seen the new version:
+brew uninstall --cask pulse 2>/dev/null
+git -C "$(brew --repository ciphera-net/tap)" fetch origin && \
+  git -C "$(brew --repository ciphera-net/tap)" reset --hard origin/main
+brew install --cask ciphera-net/tap/pulse
+
+pulse --version          # MUST print the new version and exit 0
+pulse mcp --help         # MUST succeed — proves the subcommand shipped
+xattr -l "$(readlink "$(which pulse)")" | grep -c quarantine   # MUST be 0
+```
+
+⚠️ `spctl -a -t exec -vv <binary>` still reports **rejected** after a successful install. That is
+expected, not a regression: the binary is genuinely unsigned, and Gatekeeper only *enforces* on
+quarantined files. The postflight removes the trigger, not the unsignedness. Do not "fix" the
+postflight because spctl still complains.
+
+⚠️ `brew uninstall pulse` can fail with *"Refusing to load cask from untrusted tap"* while a
+formula and a cask share the name, leaving BOTH installed with the old binary still on `PATH`.
+Use `brew uninstall --formula pulse` explicitly, then `brew reinstall --cask`.
+
+The real fix is Apple codesigning plus notarisation, which needs a paid Developer ID. Until that
+is an owner decision made and paid for, the cask `postflight` in `.goreleaser.yaml` is the only
+thing standing between a release and a binary nobody can run — treat deleting it as a breaking
+change.
+
 ## Pre-release checklist
 
 - [ ] `go test ./...` green, and the mutation battery still red-on-mutation if guards were touched
@@ -296,3 +340,5 @@ overwritten in the meantime — but `brew upgrade` alone will not move them acro
 - [ ] For a **first** release: `release_github_token` exists
 - [ ] **For v1.1.1 only:** the tap migration above is scheduled — `Formula/pulse.rb` deleted right
       after the release, and the reinstall line in the release notes
+- [ ] **After tagging:** the post-release install check above was run, `pulse --version` printed the
+      new version from a `brew install --cask`, and the quarantine count was 0
