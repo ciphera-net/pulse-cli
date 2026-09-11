@@ -130,6 +130,31 @@ homebrew_casks:
     # * 6.0.15, `brew install ciphera-net/tap/pulse` resolves to the FORMULA and
     # * only warns. The cask would be published, ignored, and never installed by
     # * anyone, with no error anywhere to say so.
+    # 🔴 WITHOUT THIS HOOK EVERY macOS INSTALL IS DEAD ON ARRIVAL, silently.
+    #
+    # A cask stages a file downloaded by the browser-equivalent path, so macOS
+    # writes com.apple.quarantine onto it. This binary is ad-hoc signed only
+    # (`codesign -dv` reports `Identifier=a.out`, no Developer ID), so Gatekeeper
+    # REJECTS it — `spctl -a -t exec` says "rejected" and the process is SIGKILLed
+    # before main() runs. The user sees exit 137 and no message whatsoever.
+    #
+    # This was measured on 11-09-2026 against the real published v1.2.0 cask, and
+    # it had been broken since v1.1.1 — the release that moved the tap from a
+    # formula to a cask. Nobody noticed because the only person testing was still
+    # on a formula install from before the migration, and a formula does not carry
+    # quarantine. The tap migration fixed a resolution bug and introduced this one.
+    #
+    # Stripping the attribute is the standard remedy for an unsigned CLI shipped by
+    # cask. The real fix is Apple codesigning plus notarisation, which needs a paid
+    # Developer ID — that is an owner decision, not a config change, and until it is
+    # made this hook is what stands between a release and a binary that cannot run.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/pulse"]
+          end
     commit_author:
       name: Usman Baig
       email: mubaig@pm.me
