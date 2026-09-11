@@ -1,6 +1,7 @@
 package mcptools_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -136,6 +137,60 @@ func TestSuppressionIsExplainedInDescriptions(t *testing.T) {
 		if !strings.Contains(lower, "withheld") && !strings.Contains(lower, "privacy floor") {
 			t.Errorf("%s does not mention the privacy floor: %q", name, d.Description)
 		}
+	}
+}
+
+// TestExportPagesDescriptionMatchesWhatTheFloorCanDo pins a description to the
+// behaviour its own arguments make reachable.
+//
+// The backend applies the pages floor only to a FILTERED export — its comment
+// reads "The floor is a FILTER prerequisite. An unfiltered list of paths is
+// site structure ... whereas the same row under country and browser filters
+// names a person." ExportArgs carries no filter field, so this tool cannot send
+// one, so the floor cannot engage, so no row is ever withheld from it.
+//
+// v1.2.1 shipped saying the opposite: that pages below the floor "are withheld
+// entirely, so the listed rows will not sum to the site total". Against
+// production on 11-09-2026 the five returned rows summed to 49 pageviews
+// against a site total of 49 — the sentence was false every time it was read. A
+// description is standing instruction: told the list is short, a model reports
+// the customer's complete data as partial. Absence invented where there is none
+// is the same defect as a zero invented where a figure was withheld.
+//
+// The two halves are asserted together, so adding filters to ExportArgs fails
+// here until the description says what the floor then does.
+func TestExportPagesDescriptionMatchesWhatTheFloorCanDo(t *testing.T) {
+	d, ok := mcptools.Lookup("pulse_export_pages")
+	if !ok {
+		t.Fatal("pulse_export_pages is not defined")
+	}
+
+	_, filterable := reflect.TypeOf(mcptools.ExportArgs{}).FieldByName("Filters")
+
+	lower := strings.ToLower(d.Description)
+	var claims []string
+	for _, phrase := range []string{
+		"withheld entirely",
+		"will not sum",
+		"do not sum",
+		"rows are withheld",
+		"pages are withheld",
+	} {
+		if strings.Contains(lower, phrase) {
+			claims = append(claims, phrase)
+		}
+	}
+
+	switch {
+	case !filterable && len(claims) > 0:
+		t.Errorf("pulse_export_pages promises withholding it cannot perform %v: ExportArgs "+
+			"sends no filter, and the backend floors this endpoint only when filtered, so "+
+			"every row is always returned. Describe the export as complete, or give "+
+			"ExportArgs a Filters field: %q", claims, d.Description)
+	case filterable && len(claims) == 0:
+		t.Errorf("ExportArgs can now filter, so the floor can withhold rows and the listed "+
+			"rows can stop summing to the site total — but the description still promises a "+
+			"complete list: %q", d.Description)
 	}
 }
 

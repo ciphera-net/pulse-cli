@@ -100,10 +100,22 @@ var Definitions = []Definition{
 		"have their per-session metrics withheld, arriving as EMPTY CELLS which mean withheld, " +
 		"never zero."},
 
+	// The floor claim this description used to carry was unreachable: the
+	// backend applies the pages floor only to a FILTERED export, and ExportArgs
+	// has no filter field, so no row is ever withheld from this tool. Measured
+	// against production on 11-09-2026, the rows summed EXACTLY to the site's
+	// pageviews while the description said they would not — which invites a
+	// model to caveat complete data as incomplete. That is the mirror image of
+	// reporting a withheld figure as zero, and just as wrong in the customer's
+	// transcript. TestExportPagesDescriptionMatchesWhatTheFloorCanDo keeps the
+	// sentence and the argument struct moving together.
 	{Name: "pulse_export_pages", Class: ClassRead, Description: "" +
 		"Bulk CSV export of per-page totals for one site between two dates. Requires explicit " +
-		"from and to. Pages seen by fewer than the floor's visitor count are withheld entirely, " +
-		"so the listed rows will not sum to the site total."},
+		"from and to. This export is never filtered, so the privacy floor withholds nothing " +
+		"from it: an unfiltered list of paths is site structure, not a slice of anyone's " +
+		"visitors. The rows are the site's busiest pages up to limit (default 100) — a page " +
+		"absent from the list had no pageviews in the range, or fell past the limit. Do not " +
+		"describe these rows as incomplete."},
 }
 
 // SiteArgs identifies a site.
