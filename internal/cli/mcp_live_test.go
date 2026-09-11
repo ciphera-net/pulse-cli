@@ -92,6 +92,8 @@ func TestMCPServerLive(t *testing.T) {
 		t.Error("realtime result has no site-wide visitors count")
 	}
 
+	assertFloorExercisedForReal(t, ctx, sess, siteID)
+
 	// A slug must be refused before a request is built. The assertion that
 	// matters is that this is a TOOL error the model can act on, not a
 	// transport error that kills the session.
@@ -220,4 +222,85 @@ func textOf(r *mcp.CallToolResult) string {
 		}
 	}
 	return ""
+}
+
+// assertFloorExercisedForReal drives the privacy floor against PRODUCTION data.
+//
+// assertFloorHonoured above accepts either branch — suppressed or not — because
+// an unfiltered site-wide query normally clears the floor. That makes it a
+// structural check, and it can pass a whole release without the suppressed path
+// ever executing. This one insists: it hunts for a slice the server actually
+// withholds and fails the run if it cannot find one, because a floor nobody has
+// seen engage is a floor nobody has tested.
+func assertFloorExercisedForReal(t *testing.T, ctx context.Context, s *mcp.ClientSession, siteID string) {
+	t.Helper()
+
+	metrics := []string{"visitors", "pageviews", "bounce_rate",
+		"avg_duration", "avg_scroll_depth", "avg_visible_duration"}
+
+	// Narrow slices, most-likely-empty first. Which one suppresses depends on
+	// the org's traffic, so this probes rather than assumes.
+	candidates := []string{
+		"country==JP", "os==Linux", "device==tablet",
+		"browser==Opera", "country==NZ", "device==tv",
+	}
+
+	var suppressed []map[string]any
+	var used []string
+	for _, f := range candidates {
+		out := callOK(t, ctx, s, "pulse_get_stats", map[string]any{
+			"site_id": siteID, "period": "7d", "filters": []string{f},
+		})
+		if yes, _ := out["suppressed"].(bool); !yes {
+			continue
+		}
+		for _, m := range metrics {
+			if _, present := out[m]; present {
+				t.Errorf("PRODUCTION suppressed result for %q still carries %q — a withheld "+
+					"metric must be structurally absent, not null", f, m)
+			}
+		}
+		sup, ok := out["suppression"].(map[string]any)
+		if !ok {
+			t.Fatalf("production suppressed result for %q carries no suppression object", f)
+		}
+		if mc, _ := sup["min_cell_size"].(float64); mc <= 0 {
+			t.Errorf("%q: min_cell_size is %v — it must come from the server", f, sup["min_cell_size"])
+		}
+		if meaning, _ := sup["meaning"].(string); !strings.Contains(meaning, "possibly none") {
+			t.Errorf("%q: suppression prose lost its meaning: %q", f, meaning)
+		}
+		suppressed = append(suppressed, out)
+		used = append(used, f)
+		if len(suppressed) == 2 {
+			break
+		}
+	}
+
+	if len(suppressed) == 0 {
+		t.Fatal("no filter produced a suppressed slice on this site, so the floor was never " +
+			"exercised against production. Widen the candidate list rather than deleting this " +
+			"assertion — an unexercised floor is the failure this test exists to prevent.")
+	}
+	t.Logf("floor engaged on production for: %v", used)
+
+	if len(suppressed) < 2 {
+		t.Logf("only one suppressed slice found; the oracle needs two and was skipped")
+		return
+	}
+
+	// THE ORACLE, against production. Two DIFFERENT withheld slices must be
+	// indistinguishable by the time a model reads them — otherwise iterating a
+	// dimension tells you which values have a live cohort, which is the exact
+	// inference the floor exists to prevent. Quota is dropped because it counts
+	// down between the two calls and describes the key, not the slice.
+	a, b := suppressed[0], suppressed[1]
+	delete(a, "quota")
+	delete(b, "quota")
+	ab, _ := json.Marshal(a)
+	bb, _ := json.Marshal(b)
+	if string(ab) != string(bb) {
+		t.Errorf("two different suppressed slices (%s, %s) are distinguishable to a model:\n a=%s\n b=%s",
+			used[0], used[1], ab, bb)
+	}
 }
