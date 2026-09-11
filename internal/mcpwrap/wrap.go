@@ -47,10 +47,13 @@ type Suppression struct {
 
 // fullMeaning is the sentence for a wholly suppressed result.
 //
-// The threshold is interpolated from the server's own meta.min_cell_size, never
-// from a compiled-in constant: a client that hardcodes the number describes the
-// wrong floor the moment the server raises it, which is the entire reason
-// min_cell_size travels on the wire.
+// The threshold is interpolated from the server's own meta.min_cell_size
+// whenever the server stated one, because a client that hardcodes the number
+// describes the wrong floor the moment the server raises it — the entire reason
+// min_cell_size travels on the wire. See threshold(): the published constant is
+// a fallback for a response that omitted the field, not the normal path. An
+// earlier version of this comment claimed the constant was never used at all,
+// which was a stronger promise than the code makes.
 func fullMeaning(threshold int) string {
 	return fmt.Sprintf(
 		"This slice covers fewer than %d visitors — possibly none. The Pulse API withholds "+

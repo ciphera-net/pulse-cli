@@ -46,6 +46,18 @@ const (
 // ReadOnly reports whether a class only reads.
 func (c Class) ReadOnly() bool { return c == ClassRead }
 
+// Destructive reports whether a class can destroy something.
+//
+// NOT the negation of ReadOnly. ClassReversible writes — creating a goal,
+// connecting an integration — and is explicitly not destructive: another call
+// puts it back. Deriving this as !ReadOnly would annotate the first write tool
+// added here as destructive, and a host that surfaces destructiveHint to a user
+// would then warn about renaming a site in the same words it warns about
+// deleting one. A warning that fires on everything trains people to dismiss it.
+func (c Class) Destructive() bool {
+	return c == ClassDestructiveRecoverable || c == ClassIrreversible
+}
+
 // Definition is a tool's identity, independent of any protocol.
 type Definition struct {
 	Name        string

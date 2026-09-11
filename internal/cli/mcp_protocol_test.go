@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ciphera-net/pulse-cli/internal/mcptools"
 )
 
 // TestMCPProtocolAgainstStubAPI drives the real binary over the real protocol,
@@ -75,13 +77,39 @@ func TestMCPProtocolAgainstStubAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 6 {
-		t.Errorf("listed %d tools, want 6", len(tools.Tools))
-	}
+	// The registry and the registration list must agree in BOTH directions.
+	// One direction alone is a half-check: only listing-has-definition lets a
+	// declared tool be silently forgotten at registration, and only
+	// definition-is-listed lets an undeclared one reach a host with whatever
+	// annotations the call site happened to pass.
+	listed := map[string]*mcp.Tool{}
 	for _, tl := range tools.Tools {
-		if !tl.Annotations.ReadOnlyHint {
-			t.Errorf("%s is not annotated read-only", tl.Name)
+		listed[tl.Name] = tl
+		if _, ok := mcptools.Lookup(tl.Name); !ok {
+			t.Errorf("tool %q was registered but has no definition", tl.Name)
 		}
+	}
+	for _, d := range mcptools.Definitions {
+		tl, ok := listed[d.Name]
+		if !ok {
+			t.Errorf("tool %q is defined but was never registered — it cannot be called", d.Name)
+			continue
+		}
+		// Annotations are derived from the class, so a disagreement here means
+		// the derivation drifted from the table a reader trusts.
+		if tl.Annotations.ReadOnlyHint != d.Class.ReadOnly() {
+			t.Errorf("%s readOnlyHint=%v but class says %v",
+				d.Name, tl.Annotations.ReadOnlyHint, d.Class.ReadOnly())
+		}
+		if tl.Annotations.DestructiveHint == nil {
+			t.Errorf("%s has no destructiveHint", d.Name)
+		} else if *tl.Annotations.DestructiveHint != d.Class.Destructive() {
+			t.Errorf("%s destructiveHint=%v but class says %v",
+				d.Name, *tl.Annotations.DestructiveHint, d.Class.Destructive())
+		}
+	}
+	if len(listed) != len(mcptools.Definitions) {
+		t.Errorf("listed %d tools, registry has %d", len(listed), len(mcptools.Definitions))
 	}
 
 	sites := callStub(t, ctx, sess, "pulse_list_sites", map[string]any{})

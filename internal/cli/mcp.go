@@ -85,14 +85,16 @@ func register[A any](s *mcp.Server, app *App,
 
 	def, ok := mcptools.Lookup(name)
 	if !ok {
-		// Unreachable in a built binary: TestEveryRegisteredToolIsDefined pins
-		// the registry and this list together. Panicking rather than silently
-		// registering an undescribed tool keeps that a build-time fact.
+		// Unreachable in a built binary: TestMCPProtocolAgainstStubAPI drives a
+		// real session and asserts the registry and this list agree in BOTH
+		// directions, so a name here with no definition fails the suite before
+		// it can reach a host. Panicking rather than silently registering an
+		// undescribed tool keeps that true even if somebody deletes the test.
 		panic("mcp: no definition for tool " + name)
 	}
 
 	readOnly := def.Class.ReadOnly()
-	destructive := !readOnly
+	destructive := def.Class.Destructive()
 	openWorld := true
 
 	mcp.AddTool(s, &mcp.Tool{
