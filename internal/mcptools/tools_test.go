@@ -138,3 +138,36 @@ func TestSuppressionIsExplainedInDescriptions(t *testing.T) {
 		}
 	}
 }
+
+// TestDestructiveIsNotTheNegationOfReadOnly pins the distinction that a future
+// write tool depends on.
+//
+// A class-1 tool writes — it creates a goal, connects an integration — and is
+// explicitly recoverable by another call. Deriving destructiveHint as
+// !ReadOnly() would annotate it identically to permanently deleting a site, and
+// a host that shows that hint to a person would warn about both in the same
+// words. This test is the reason that derivation cannot quietly regress.
+func TestDestructiveIsNotTheNegationOfReadOnly(t *testing.T) {
+	cases := []struct {
+		class       mcptools.Class
+		readOnly    bool
+		destructive bool
+	}{
+		{mcptools.ClassRead, true, false},
+		{mcptools.ClassReversible, false, false}, // writes, but is not destructive
+		{mcptools.ClassDestructiveRecoverable, false, true},
+		{mcptools.ClassIrreversible, false, true},
+	}
+	for _, c := range cases {
+		if got := c.class.ReadOnly(); got != c.readOnly {
+			t.Errorf("class %d ReadOnly()=%v, want %v", c.class, got, c.readOnly)
+		}
+		if got := c.class.Destructive(); got != c.destructive {
+			t.Errorf("class %d Destructive()=%v, want %v", c.class, got, c.destructive)
+		}
+	}
+	if mcptools.ClassReversible.Destructive() == !mcptools.ClassReversible.ReadOnly() {
+		t.Error("Destructive() has collapsed back into !ReadOnly() — a reversible " +
+			"write would now be annotated as destructive")
+	}
+}
