@@ -1,6 +1,6 @@
 # pulse
 
-Read your [Pulse](https://ciphera.net/products/pulse) analytics from the terminal.
+Read your [Pulse Analytics](https://ciphera.net/products/pulse) data from the terminal.
 
 A single static binary with no runtime to install. Read-only, aggregates-only, and it stores your API
 key in the operating system keychain rather than in a file.

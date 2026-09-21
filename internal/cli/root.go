@@ -60,8 +60,8 @@ func Execute() int {
 
 	root := &cobra.Command{
 		Use:   "pulse",
-		Short: "Read your Pulse analytics from the terminal",
-		Long: "Pulse CLI — read-only access to your Pulse analytics.\n\n" +
+		Short: "Read your Pulse Analytics data from the terminal",
+		Long: "Pulse Analytics CLI — read-only access to your analytics data.\n\n" +
 			"The API is aggregates-only and so is this tool: there are no write commands,\n" +
 			"and no command returns per-visitor data.",
 		SilenceUsage:  true,
