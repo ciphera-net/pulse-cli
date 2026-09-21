@@ -1,4 +1,4 @@
-// Command pulse reads Pulse analytics from the terminal.
+// Command pulse reads Pulse Analytics data from the terminal.
 package main
 
 import (

@@ -114,7 +114,7 @@ homebrew_casks:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     directory: Casks
     homepage: "https://ciphera.net/products/pulse"
-    description: "Read your Pulse analytics from the terminal"
+    description: "Read your Pulse Analytics data from the terminal"
     license: "Apache-2.0"
     binaries: [pulse]
     # * There is deliberately NO `conflicts: - formula: pulse` here, and its
