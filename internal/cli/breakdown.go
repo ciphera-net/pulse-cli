@@ -101,15 +101,17 @@ func newBreakdownCmd(app *App) *cobra.Command {
 				}
 				rows := make([][]string, 0, len(res.Data.Rows))
 				for _, row := range res.Data.Rows {
-					// * CSV keeps the FULL sanitised value — no truncation. A
-					// * spreadsheet does not have a fixed-width alignment
-					// * problem, and cutting data out of an export a script may
-					// * depend on is a worse failure than a wide column.
-					value := render.SanitizeControl(row.Value)
+					// * CSV keeps the FULL value, un-truncated — a spreadsheet does
+					// * not have a fixed-width alignment problem, and cutting data out
+					// * of an export a script may depend on is a worse failure than a
+					// * wide column. Control-character escaping and CSV-formula
+					// * guarding both happen inside CSVRecords now — the shared
+					// * choke point every CSV cell passes through (render/table.go) —
+					// * not here.
 					if hasCountry {
-						rows = append(rows, []string{value, sanitizedCountry(row), strconv.Itoa(row.Visitors), strconv.Itoa(row.Pageviews)})
+						rows = append(rows, []string{row.Value, countryOf(row), strconv.Itoa(row.Visitors), strconv.Itoa(row.Pageviews)})
 					} else {
-						rows = append(rows, []string{value, strconv.Itoa(row.Visitors), strconv.Itoa(row.Pageviews)})
+						rows = append(rows, []string{row.Value, strconv.Itoa(row.Visitors), strconv.Itoa(row.Pageviews)})
 					}
 				}
 				return p.CSVRecords(headers, rows)
@@ -135,13 +137,15 @@ func newBreakdownCmd(app *App) *cobra.Command {
 				t.Right = []bool{false, false, true, true}
 			}
 			for _, row := range res.Data.Rows {
-				// * Sanitise FIRST, truncate SECOND: the length bound is on what
-				// * actually gets displayed, and truncating raw input first could
-				// * cut a dangerous multi-byte sequence in half instead of
-				// * removing it whole.
-				value := render.Truncate(render.SanitizeControl(row.Value), tableValueWidth)
+				// * Bounds the DISPLAYED width only — Table (render/table.go) is
+				// * the shared choke point that control-sanitises every cell, so
+				// * this command no longer needs to call SanitizeControl itself.
+				// * Truncate is rune-safe, so cutting here first never corrupts a
+				// * dangerous rune Table has yet to escape: the cut either keeps
+				// * that rune whole or drops it whole.
+				value := render.Truncate(row.Value, tableValueWidth)
 				if hasCountry {
-					t.Rows = append(t.Rows, []string{value, sanitizedCountry(row), render.Thousands(row.Visitors), render.Thousands(row.Pageviews)})
+					t.Rows = append(t.Rows, []string{value, countryOf(row), render.Thousands(row.Visitors), render.Thousands(row.Pageviews)})
 				} else {
 					t.Rows = append(t.Rows, []string{value, render.Thousands(row.Visitors), render.Thousands(row.Pageviews)})
 				}
@@ -162,14 +166,14 @@ func newBreakdownCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// sanitizedCountry reads a region row's country, which is a short ISO code
-// from our own GeoIP lookup rather than visitor-supplied text — but it still
-// passes through SanitizeControl, because the field is a plain string on the
-// wire and defending only the columns we currently believe are risky is how a
-// sanitiser goes stale the day a new source starts filling it.
-func sanitizedCountry(row publicv1.BreakdownRow) string {
+// countryOf reads a region row's country, which is a short ISO code from our
+// own GeoIP lookup rather than visitor-supplied text — nil-guarded here only;
+// sanitisation is Table/CSVRecords' job now (render/table.go), the same as
+// every other cell, so defending only the columns we currently believe are
+// risky can't go stale the day a new source starts filling this field.
+func countryOf(row publicv1.BreakdownRow) string {
 	if row.Country == nil {
 		return ""
 	}
-	return render.SanitizeControl(*row.Country)
+	return *row.Country
 }

@@ -155,10 +155,12 @@ too fine-grained to publish as a ranked list, or are free text a visitor typed:
 (`city`, `screen_resolution`, `timezone`, `utm_term` and `utm_content` stay filterable but are not
 groupable.) An unknown dimension is refused locally, before a request is spent.
 
-A page path, referrer or UTM value is visitor-supplied and can contain anything — table output
-escapes any control character, ESC, or bidi-override character as `\uXXXX` rather than writing it
-to your terminal raw, and truncates an unusually long value to keep the table aligned. `--csv` keeps
-every value in full (still escaped); `--json` is the API's own bytes, untouched.
+A page path, referrer or UTM value is visitor-supplied and can contain anything. Every command's
+table and CSV output (not just `breakdown`'s — `realtime`'s top paths go through the same
+renderer) escapes any control character, invisible character, or bidi-override/isolate character
+as `\uXXXX` rather than writing it to your terminal raw, and table mode truncates an unusually long
+value to keep columns aligned. `--csv` keeps every value in full (still escaped, and see
+[Output](#output) for the CSV-specific formula guard); `--json` is the API's own bytes, untouched.
 
 ## Ranges
 
@@ -189,6 +191,12 @@ terminal. So this is always clean:
 pulse export daily --last 30d > month.csv
 pulse stats --last 7d --json | jq '.data.visitors'
 ```
+
+A `--csv` cell whose value would open as a spreadsheet formula — it starts with `=`, `+`, `-`, `@`,
+or a leading tab or carriage return — is written with a leading apostrophe, unless the whole cell
+is a plain number (so `-5` in a numeric column is untouched): a defence against CSV injection
+(CWE-1236) for any visitor-supplied or pasted-in value this CLI exports. `--json` is never altered
+by this or by the control-character escaping above — it is the API's own bytes.
 
 `--json` returns the API's own bytes rather than a re-encoding. That keeps the CLI usable as a
 debugging tool for the API, and stops it from becoming a second, subtly different contract — v1 is

@@ -217,6 +217,40 @@ func TestBreakdownTableRendersRegionRowWithCountry(t *testing.T) {
 	}
 }
 
+// * The CSV counterpart of TestBreakdownTableRendersRegionRowWithCountry: the
+// * header must gain the COUNTRY column in the same position CSV consumers
+// * would expect it (between value and visitors), and the row must carry it —
+// * pinned separately from the table case because the CSV and table code
+// * paths build their headers and rows independently in breakdown.go.
+func TestBreakdownCSVRendersRegionRowWithCountry(t *testing.T) {
+	be := "BE"
+	row := breakdownRowJSON(t, "Limburg", &be, 128, 340)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(breakdownBody(t, "region", row))
+	}))
+	defer srv.Close()
+
+	out, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
+	app := newBreakdownTestApp(render.ModeCSV, out, errBuf, srv.URL)
+
+	cmd := newBreakdownCmd(app)
+	cmd.SetArgs([]string{"region", "--last", "7d"})
+	if err := mustExecute(t, cmd); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d CSV lines, want 2 (header + one row): %q", len(lines), out.String())
+	}
+	if lines[0] != "value,country,visitors,pageviews" {
+		t.Errorf("CSV header = %q, want %q", lines[0], "value,country,visitors,pageviews")
+	}
+	if lines[1] != "Limburg,BE,128,340" {
+		t.Errorf("CSV row = %q, want %q", lines[1], "Limburg,BE,128,340")
+	}
+}
+
 // * A non-region dimension must NOT grow a COUNTRY column, even though the
 // * wire type technically allows the field on any row.
 func TestBreakdownTableOmitsCountryForNonRegionDimension(t *testing.T) {
