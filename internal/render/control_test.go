@@ -27,7 +27,12 @@ func escapedForm(r rune) string {
 // * One case per class in pulse-backend's isInvisibleOrControl, so the two
 // * cleaners cannot silently drift apart, plus U+2028/U+2029 (this renderer's
 // * own addition — see isDangerousRune's doc comment for why the server does
-// * not need them and this one does).
+// * not need them and this one does). isDangerousRune is now PROPERTY-based
+// * (unicode.Cf / Other_Default_Ignorable_Code_Point / Variation_Selector)
+// * rather than an enumerated range list, so these cases also cover members
+// * of those properties the earlier range list never named at all: the soft
+// * hyphen, the combining grapheme joiner, the Hangul filler characters, and
+// * both variation-selector blocks.
 func TestSanitizeControlEscapesEverythingDangerous(t *testing.T) {
 	cases := []struct {
 		name string
@@ -56,6 +61,21 @@ func TestSanitizeControlEscapesEverythingDangerous(t *testing.T) {
 		{"PDI bidi isolate", string(rune(0x2069)) + "end", escapedForm(0x2069) + "end"},
 		{"tag character U+E0001 (outside the BMP)",
 			"a" + string(rune(0xe0001)) + "b", "a" + escapedForm(0xe0001) + "b"},
+		{"soft hyphen U+00AD (Cf)", "co" + string(rune(0x00ad)) + "operate", "co" + escapedForm(0x00ad) + "operate"},
+		{"combining grapheme joiner U+034F (Other_Default_Ignorable_Code_Point)",
+			"a" + string(rune(0x034f)) + "b", "a" + escapedForm(0x034f) + "b"},
+		{"Hangul filler U+3164 (Other_Default_Ignorable_Code_Point)",
+			"a" + string(rune(0x3164)) + "b", "a" + escapedForm(0x3164) + "b"},
+		{"halfwidth Hangul filler U+FFA0 (Other_Default_Ignorable_Code_Point)",
+			"a" + string(rune(0xffa0)) + "b", "a" + escapedForm(0xffa0) + "b"},
+		{"variation selector-16 U+FE0F (Variation_Selector)",
+			"a" + string(rune(0xfe0f)) + "b", "a" + escapedForm(0xfe0f) + "b"},
+		{"variation selector supplement U+E0100 (Variation_Selector)",
+			"a" + string(rune(0xe0100)) + "b", "a" + escapedForm(0xe0100) + "b"},
+		{"variation selector supplement U+E01EF (Variation_Selector)",
+			"a" + string(rune(0xe01ef)) + "b", "a" + escapedForm(0xe01ef) + "b"},
+		{"interlinear annotation anchor U+FFF9 (Cf)", "a" + string(rune(0xfff9)) + "b", "a" + escapedForm(0xfff9) + "b"},
+		{"tag character U+E0041 (Cf, tag block)", "a" + string(rune(0xe0041)) + "b", "a" + escapedForm(0xe0041) + "b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,6 +95,7 @@ func TestSanitizeControlLeavesNoRawDangerousByte(t *testing.T) {
 	dangerous := []rune{
 		0x1b, 0x07, 0x00, 0x7f, 0x90, 0x202e, 0x2066,
 		0x061c, 0x180e, 0x200b, 0x2028, 0x2029, 0x2060, 0xfeff, 0xe0001,
+		0x00ad, 0x034f, 0x3164, 0xffa0, 0xfe0f, 0xe0100, 0xe01ef, 0xfff9, 0xe0041,
 	}
 	var sb strings.Builder
 	sb.WriteString("/a")
@@ -96,7 +117,11 @@ func TestSanitizeControlLeavesNoRawDangerousByte(t *testing.T) {
 
 // * The complement: ordinary text, including non-ASCII, must survive untouched
 // * — a security control that mangles a French or Japanese page title on every
-// * request would not stay on.
+// * request would not stay on. "Zürich" and "naïve" exercise precomposed AND
+// * combining accents (a combining mark is Unicode category M, not Cf/ODICP/
+// * Variation_Selector, so it must not be caught by the property-based rule);
+// * "日本語" is CJK; "emoji 😀" is outside the BMP but is Symbol (So), not a
+// * format character.
 func TestSanitizeControlLeavesOrdinaryTextUnchanged(t *testing.T) {
 	for _, s := range []string{
 		"/blog/où-nous-allons",
@@ -104,10 +129,47 @@ func TestSanitizeControlLeavesOrdinaryTextUnchanged(t *testing.T) {
 		"/pricing?plan=pro&ref=twitter",
 		"",
 		"plain ascii, spaces, punctuation!",
+		"/pricing",
+		"Zürich",
+		"日本語",
+		"naïve",
+		"emoji 😀",
 	} {
 		if got := SanitizeControl(s); got != s {
 			t.Errorf("SanitizeControl(%q) = %q, want it unchanged", s, got)
 		}
+	}
+}
+
+// * Precomposed vs. decomposed accents are a real-world variant of the same
+// * "naïve" string above, worth pinning separately: a combining acute accent
+// * (U+0301) is category Mn (Mark, nonspacing), which is not Cf, not
+// * Other_Default_Ignorable_Code_Point, and not Variation_Selector, so it must
+// * survive — it is not a variation selector just because it also modifies the
+// * character before it.
+func TestSanitizeControlLeavesDecomposedAccentsUnchanged(t *testing.T) {
+	decomposed := "nai" + string(rune(0x0308)) + "ve" // n a i <combining diaeresis> v e
+	if got := SanitizeControl(decomposed); got != decomposed {
+		t.Errorf("SanitizeControl(%q) = %q, want it unchanged", decomposed, got)
+	}
+}
+
+// * The specific behaviour the review named: an emoji followed by a variation
+// * selector (VS16, U+FE0F — here selecting the emoji-style presentation of a
+// * character that also has a text-style form) loses ONLY the selector, never
+// * the base character it was modifying. This is what proves the rule reaches
+// * into VS16 without over-reaching into the emoji itself, which is category
+// * So (Symbol, other), not Cf/ODICP/Variation_Selector.
+func TestSanitizeControlOnEmojiPlusVariationSelectorDropsOnlyTheSelector(t *testing.T) {
+	emoji := "😀"
+	in := emoji + string(rune(0xfe0f))
+	want := emoji + escapedForm(0xfe0f)
+	got := SanitizeControl(in)
+	if got != want {
+		t.Errorf("SanitizeControl(%q) = %q, want %q (emoji preserved, only VS16 escaped)", in, got, want)
+	}
+	if !strings.Contains(got, emoji) {
+		t.Errorf("the base emoji was lost, not just the selector: %q", got)
 	}
 }
 

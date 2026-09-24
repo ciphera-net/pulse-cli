@@ -2,6 +2,7 @@ package render
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -37,18 +38,43 @@ func SanitizeControl(s string) string {
 	return sb.String()
 }
 
-// isDangerousRune reports whether r is a control character, an invisible
-// character, or a bidi override / isolate — something a terminal interprets,
-// hides, or reorders rather than displays plainly.
+// isDangerousRune reports whether r is a control character or one Unicode
+// marks as invisible, format, or a variation selector — something a terminal
+// interprets, hides, reorders, or silently swallows rather than displaying
+// plainly.
 //
-// The classes here match pulse-backend's MCP cleaner
-// (internal/api/isInvisibleOrControl) exactly, plus two more: U+2028 and
-// U+2029 (LINE/PARAGRAPH SEPARATOR). The server's cleaner does not need them
-// escaped — it collapses all whitespace, and those two code points are
-// Unicode whitespace — but this renderer does not collapse whitespace, and a
-// raw one of either would print as an actual line break in a terminal, which
-// is exactly the "one logical row per line" break ESC already gets escaped
-// for.
+// This mirrors the rule pulse-backend's MCP cleaner
+// (internal/api/mcp_clean.go, isInvisibleOrControl) uses, PROPERTY-based
+// rather than an enumerated list of ranges, so the two cannot silently drift
+// apart as Unicode adds members to a category neither side remembered to
+// list by hand:
+//
+//   - C0 controls, DEL, C1 controls — the classic terminal-escape range.
+//   - unicode.Cf (Cf: Other, format): soft hyphen (U+00AD), the Arabic letter
+//     mark and Mongolian vowel separator, every zero-width space/joiner and
+//     LRM/RLM, every bidi embedding/override/isolate, the word joiner and
+//     invisible math operators, the BOM, the interlinear annotation
+//     characters, and the tag characters (U+E0000 block) — invisible text
+//     smuggling.
+//   - unicode.Other_Default_Ignorable_Code_Point: characters Unicode says a
+//     renderer may treat as invisible even though they are not formally
+//     Cf — the combining grapheme joiner (U+034F), the Hangul filler
+//     characters, and the rest of the "default ignorable" set.
+//   - unicode.Variation_Selector: VS1-16 (U+FE00-FE0F) and the supplement
+//     VS17-256 (U+E0100-E01EF), plus the Mongolian free variation selectors
+//     — a known byte-smuggling channel (data hidden as a "rendering hint"
+//     attached to the preceding character) and, incidentally, why an emoji
+//     followed by VS16 shows as the emoji alone here: only the selector is
+//     escaped, never the base character it was modifying.
+//
+// Plus one addition neither side needs to make from the same property, kept
+// as an explicit case for exactly that reason: U+2028 and U+2029
+// (LINE/PARAGRAPH SEPARATOR). Unicode does not put them in Cf, and the
+// server's cleaner does not need them escaped — it collapses all whitespace,
+// and those two code points are Unicode whitespace — but this renderer does
+// not collapse whitespace, and a raw one of either would print as an actual
+// line break in a terminal, which is exactly the "one logical row per line"
+// break ESC already gets escaped for.
 //
 // The C0 range (0x00-0x1F) is escaped WHOLE, including \t and \n: this
 // renderer's contract is one logical row per line, in every mode, and a raw
@@ -62,23 +88,13 @@ func isDangerousRune(r rune) bool {
 		return true
 	case r >= 0x80 && r <= 0x9f: // C1 controls
 		return true
-	case r == 0x061c: // Arabic letter mark
-		return true
-	case r == 0x180e: // Mongolian vowel separator
-		return true
-	case r >= 0x200b && r <= 0x200f: // zero-width space/joiners, LRM, RLM
-		return true
 	case r == 0x2028, r == 0x2029: // LINE SEPARATOR, PARAGRAPH SEPARATOR
 		return true
-	case r >= 0x202a && r <= 0x202e: // LRE, RLE, PDF, LRO, RLO
+	case unicode.Is(unicode.Cf, r): // format characters (soft hyphen, bidi controls, ZW*, tags, ...)
 		return true
-	case r >= 0x2060 && r <= 0x2064: // word joiner, invisible operators
+	case unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r): // CGJ, Hangul fillers, ...
 		return true
-	case r == 0xfeff: // BOM
-		return true
-	case r >= 0x2066 && r <= 0x2069: // LRI, RLI, FSI, PDI
-		return true
-	case r >= 0xe0000 && r <= 0xe007f: // tag characters: invisible text smuggling
+	case unicode.Is(unicode.Variation_Selector, r): // VS1-16, VS17-256, Mongolian FVS
 		return true
 	}
 	return false
