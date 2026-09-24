@@ -67,6 +67,7 @@ $ pulse sites use ciphera.net
 | `pulse auth login · logout · status` | Manage the stored key |
 | `pulse sites ls · use <site>` | List sites, set the default |
 | `pulse stats` | Aggregate metrics over a range |
+| `pulse breakdown <dimension>` | Rank a site's traffic by one dimension |
 | `pulse realtime` | Visitors active right now |
 | `pulse export daily · pages` | Bulk CSV or JSON |
 | `pulse upgrade [--check]` | Install the newest release |
@@ -116,6 +117,48 @@ Available dimensions: `page`, `referrer`, `channel`, `country`, `region`, `city`
 
 `realtime` accepts no filters, permanently: a filtered five-minute window describes one person's
 current session.
+
+## Ranking by a dimension
+
+```console
+$ pulse breakdown page --last 7d
+  ciphera.net · page · 1 Aug – 7 Aug 2026 (UTC)
+
+  VALUE               VISITORS  PAGEVIEWS
+  /                       1,284      1,901
+  /pricing                  412        498
+  /blog/opaque-migration    203        211
+
+$ pulse breakdown region --last 30d --limit 5
+  ciphera.net · region · 1 Aug – 31 Aug 2026 (UTC)
+
+  VALUE      COUNTRY  VISITORS  PAGEVIEWS
+  Brussels   BE            340        512
+  Antwerp    BE            118        160
+```
+
+`breakdown` ranks a site's traffic over a range by one dimension — the top pages, referrers,
+countries and so on, largest first. It reuses `--last`/`--from`/`--to` and `--filter` exactly as
+`stats` does, plus `--limit` (1–100, default 20).
+
+**Unlike every other command, `breakdown` has no privacy floor.** Every row comes back with its
+real counts, including a row covering fewer than five visitors — there is no `—` here and nothing
+is ever withheld. `region` rows carry a COUNTRY column, because a region name alone is ambiguous
+("Limburg" is a province of both Belgium and the Netherlands); no other dimension does.
+
+Groupable dimensions are a narrower list than filterable ones — some of `--filter`'s dimensions are
+too fine-grained to publish as a ranked list, or are free text a visitor typed:
+
+`page`, `entry_page`, `exit_page`, `referrer`, `channel`, `country`, `region`, `browser`, `os`,
+`device`, `language`, `utm_source`, `utm_medium`, `utm_campaign`.
+
+(`city`, `screen_resolution`, `timezone`, `utm_term` and `utm_content` stay filterable but are not
+groupable.) An unknown dimension is refused locally, before a request is spent.
+
+A page path, referrer or UTM value is visitor-supplied and can contain anything — table output
+escapes any control character, ESC, or bidi-override character as `\uXXXX` rather than writing it
+to your terminal raw, and truncates an unusually long value to keep the table aligned. `--csv` keeps
+every value in full (still escaped); `--json` is the API's own bytes, untouched.
 
 ## Ranges
 

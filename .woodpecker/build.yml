@@ -86,7 +86,7 @@ steps:
       # * — a flag registered on the wrong command, a nil sub-command — compiles
       # * cleanly and fails only when someone runs it.
       - |
-        for cmd in "auth" "auth login" "auth status" "sites" "sites ls" "stats" "realtime" "export" "export daily" "export pages"; do
+        for cmd in "auth" "auth login" "auth status" "sites" "sites ls" "stats" "breakdown" "realtime" "export" "export daily" "export pages"; do
           /tmp/pulse $cmd --help > /dev/null || { echo "FAILED: pulse $cmd --help"; exit 1; }
           echo "ok  pulse $cmd --help"
         done
@@ -109,7 +109,7 @@ steps:
       - |
         set +e
         fail=0
-        for c in "stats --last 7d" "realtime" "export daily --last 7d" "export pages --last 7d" "sites ls" "auth status"; do
+        for c in "stats --last 7d" "breakdown page --last 7d" "realtime" "export daily --last 7d" "export pages --last 7d" "sites ls" "auth status"; do
           PULSE_API_KEY="" /tmp/pulse $c >/dev/null 2>&1
           code=$?
           if [ "$code" = "3" ]; then echo "ok  unauthenticated \`pulse $c\` exits 3"
