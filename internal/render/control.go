@@ -37,8 +37,18 @@ func SanitizeControl(s string) string {
 	return sb.String()
 }
 
-// isDangerousRune reports whether r is a control character or a bidi override
-// / isolate — something a terminal interprets rather than displays.
+// isDangerousRune reports whether r is a control character, an invisible
+// character, or a bidi override / isolate — something a terminal interprets,
+// hides, or reorders rather than displays plainly.
+//
+// The classes here match pulse-backend's MCP cleaner
+// (internal/api/isInvisibleOrControl) exactly, plus two more: U+2028 and
+// U+2029 (LINE/PARAGRAPH SEPARATOR). The server's cleaner does not need them
+// escaped — it collapses all whitespace, and those two code points are
+// Unicode whitespace — but this renderer does not collapse whitespace, and a
+// raw one of either would print as an actual line break in a terminal, which
+// is exactly the "one logical row per line" break ESC already gets escaped
+// for.
 //
 // The C0 range (0x00-0x1F) is escaped WHOLE, including \t and \n: this
 // renderer's contract is one logical row per line, in every mode, and a raw
@@ -52,9 +62,23 @@ func isDangerousRune(r rune) bool {
 		return true
 	case r >= 0x80 && r <= 0x9f: // C1 controls
 		return true
+	case r == 0x061c: // Arabic letter mark
+		return true
+	case r == 0x180e: // Mongolian vowel separator
+		return true
+	case r >= 0x200b && r <= 0x200f: // zero-width space/joiners, LRM, RLM
+		return true
+	case r == 0x2028, r == 0x2029: // LINE SEPARATOR, PARAGRAPH SEPARATOR
+		return true
 	case r >= 0x202a && r <= 0x202e: // LRE, RLE, PDF, LRO, RLO
 		return true
+	case r >= 0x2060 && r <= 0x2064: // word joiner, invisible operators
+		return true
+	case r == 0xfeff: // BOM
+		return true
 	case r >= 0x2066 && r <= 0x2069: // LRI, RLI, FSI, PDI
+		return true
+	case r >= 0xe0000 && r <= 0xe007f: // tag characters: invisible text smuggling
 		return true
 	}
 	return false
@@ -86,11 +110,12 @@ func escapeRune(r rune) string {
 // Truncate shortens s to at most max runes, replacing the tail with an ellipsis
 // when it does not fit.
 //
-// Rune-aware, so a multi-byte character never gets cut mid-sequence. Callers
-// that also need SanitizeControl should sanitise FIRST and truncate the
-// result: truncating first could cut a raw multi-byte escape target in half,
-// and the point of a length bound here is the DISPLAYED width, which is the
-// sanitised string's.
+// Rune-aware, so a multi-byte character never gets cut mid-sequence — and a
+// dangerous rune is exactly one rune, so a cut at the boundary keeps it whole
+// or drops it whole, never half of it. Callers do not need to sanitise before
+// calling this: Table (table.go) sanitises every cell it is given, after
+// truncation, which is the shared choke point now rather than a per-caller
+// step — see Table's doc comment.
 func Truncate(s string, max int) string {
 	if max <= 1 || utf8.RuneCountInString(s) <= max {
 		return s

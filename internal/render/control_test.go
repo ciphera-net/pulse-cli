@@ -23,6 +23,11 @@ func escapedForm(r rune) string {
 // * Every C0/C1 control character, ESC, and every bidi override/isolate must be
 // * escaped, never written raw — a raw ESC is a terminal escape-sequence
 // * injection and a raw bidi override can make the printed line read backwards.
+// *
+// * One case per class in pulse-backend's isInvisibleOrControl, so the two
+// * cleaners cannot silently drift apart, plus U+2028/U+2029 (this renderer's
+// * own addition — see isDangerousRune's doc comment for why the server does
+// * not need them and this one does).
 func TestSanitizeControlEscapesEverythingDangerous(t *testing.T) {
 	cases := []struct {
 		name string
@@ -36,8 +41,21 @@ func TestSanitizeControlEscapesEverythingDangerous(t *testing.T) {
 		{"C1 control", "a" + string(rune(0x85)) + "b", "a" + escapedForm(0x85) + "b"},
 		{"tab and newline", "a\tb\nc\rd",
 			"a" + escapedForm('\t') + "b" + escapedForm('\n') + "c" + escapedForm('\r') + "d"},
+		{"Arabic letter mark U+061C", "a" + string(rune(0x061c)) + "b", "a" + escapedForm(0x061c) + "b"},
+		{"Mongolian vowel separator U+180E", "a" + string(rune(0x180e)) + "b", "a" + escapedForm(0x180e) + "b"},
+		{"zero-width space U+200B", "a" + string(rune(0x200b)) + "b", "a" + escapedForm(0x200b) + "b"},
+		{"ZWNJ U+200C", "a" + string(rune(0x200c)) + "b", "a" + escapedForm(0x200c) + "b"},
+		{"left-to-right mark U+200E", "a" + string(rune(0x200e)) + "b", "a" + escapedForm(0x200e) + "b"},
+		{"right-to-left mark U+200F", "a" + string(rune(0x200f)) + "b", "a" + escapedForm(0x200f) + "b"},
+		{"LINE SEPARATOR U+2028", "a" + string(rune(0x2028)) + "b", "a" + escapedForm(0x2028) + "b"},
+		{"PARAGRAPH SEPARATOR U+2029", "a" + string(rune(0x2029)) + "b", "a" + escapedForm(0x2029) + "b"},
 		{"RLO bidi override", string(rune(0x202e)) + "reversed", escapedForm(0x202e) + "reversed"},
+		{"word joiner U+2060", "a" + string(rune(0x2060)) + "b", "a" + escapedForm(0x2060) + "b"},
+		{"invisible plus U+2064", "a" + string(rune(0x2064)) + "b", "a" + escapedForm(0x2064) + "b"},
+		{"BOM U+FEFF", "a" + string(rune(0xfeff)) + "b", "a" + escapedForm(0xfeff) + "b"},
 		{"PDI bidi isolate", string(rune(0x2069)) + "end", escapedForm(0x2069) + "end"},
+		{"tag character U+E0001 (outside the BMP)",
+			"a" + string(rune(0xe0001)) + "b", "a" + escapedForm(0xe0001) + "b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,7 +72,10 @@ func TestSanitizeControlEscapesEverythingDangerous(t *testing.T) {
 // * string against a fixture can pass by accident if the escaping logic drops a
 // * byte instead of escaping it.
 func TestSanitizeControlLeavesNoRawDangerousByte(t *testing.T) {
-	dangerous := []rune{0x1b, 0x07, 0x00, 0x7f, 0x90, 0x202e, 0x2066}
+	dangerous := []rune{
+		0x1b, 0x07, 0x00, 0x7f, 0x90, 0x202e, 0x2066,
+		0x061c, 0x180e, 0x200b, 0x2028, 0x2029, 0x2060, 0xfeff, 0xe0001,
+	}
 	var sb strings.Builder
 	sb.WriteString("/a")
 	for _, r := range dangerous {
