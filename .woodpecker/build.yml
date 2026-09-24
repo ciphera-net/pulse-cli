@@ -116,3 +116,16 @@ steps:
           else echo "FAILED: unauthenticated \`pulse $c\` exited $code, want 3"; fail=1; fi
         done
         [ "$fail" = "0" ] || exit 1
+      # * An EXCLUDED dimension ("city" is filterable but not groupable — see
+      # * README.md's "Ranking by a dimension" section) must exit `2` (bad
+      # * usage) even with no credentials at all, not `3`. CheckBreakdownDimension
+      # * runs before this command ever touches a credential or the network, so
+      # * an unauthenticated container answering `2` here is what proves that
+      # * ordering rather than assumes it. The sweep above only proves a VALID
+      # * dimension exits 3 unauthenticated; it says nothing about a dimension
+      # * that is refused for an entirely different reason before that check
+      # * would even run.
+      - |
+        PULSE_API_KEY="" /tmp/pulse breakdown city --last 7d >/dev/null 2>&1
+        [ "$?" = "2" ] || { echo "FAILED: excluded dimension did not exit 2"; exit 1; }
+        echo "ok  \`pulse breakdown city\` (an excluded dimension) exits 2, not 3"
