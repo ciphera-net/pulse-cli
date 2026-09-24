@@ -51,6 +51,25 @@ func TestJSONGoesToStdoutUnmodified(t *testing.T) {
 	}
 }
 
+// * JSON is the API's own bytes — neither the control-character sanitiser nor
+// * the CSV formula guard that Table/CSVRecords now apply may touch it. A
+// * value carrying an ESC-driven escape sequence, a bidi override, or a
+// * leading "=" that would trigger the CSV guard elsewhere must all survive
+// * byte-for-byte, because --json's whole promise is "exactly the API
+// * response".
+func TestJSONIsNeverSanitizedOrFormulaGuarded(t *testing.T) {
+	p, out, _ := testPrinter(ModeJSON)
+
+	body := "{\"data\":{\"rows\":[{\"value\":\"/pricing\x1b]0;pwned\x07‮reversed\"}," +
+		"{\"value\":\"=cmd|'/C calc'!A1\"}]}}"
+	p.JSON([]byte(body))
+
+	got := strings.TrimRight(out.String(), "\n")
+	if got != body {
+		t.Errorf("JSON output was altered.\n got: %s\nwant: %s", got, body)
+	}
+}
+
 // * Colour is opt-out by capability, not by flag. When Color is false — which is
 // * what NewPrinter decides for a pipe — not one escape byte may appear, or the
 // * bytes end up in a CSV file or a log.

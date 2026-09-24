@@ -86,7 +86,7 @@ steps:
       # * — a flag registered on the wrong command, a nil sub-command — compiles
       # * cleanly and fails only when someone runs it.
       - |
-        for cmd in "auth" "auth login" "auth status" "sites" "sites ls" "stats" "realtime" "export" "export daily" "export pages"; do
+        for cmd in "auth" "auth login" "auth status" "sites" "sites ls" "stats" "breakdown" "realtime" "export" "export daily" "export pages"; do
           /tmp/pulse $cmd --help > /dev/null || { echo "FAILED: pulse $cmd --help"; exit 1; }
           echo "ok  pulse $cmd --help"
         done
@@ -109,10 +109,23 @@ steps:
       - |
         set +e
         fail=0
-        for c in "stats --last 7d" "realtime" "export daily --last 7d" "export pages --last 7d" "sites ls" "auth status"; do
+        for c in "stats --last 7d" "breakdown page --last 7d" "realtime" "export daily --last 7d" "export pages --last 7d" "sites ls" "auth status"; do
           PULSE_API_KEY="" /tmp/pulse $c >/dev/null 2>&1
           code=$?
           if [ "$code" = "3" ]; then echo "ok  unauthenticated \`pulse $c\` exits 3"
           else echo "FAILED: unauthenticated \`pulse $c\` exited $code, want 3"; fail=1; fi
         done
         [ "$fail" = "0" ] || exit 1
+      # * An EXCLUDED dimension ("city" is filterable but not groupable — see
+      # * README.md's "Ranking by a dimension" section) must exit `2` (bad
+      # * usage) even with no credentials at all, not `3`. CheckBreakdownDimension
+      # * runs before this command ever touches a credential or the network, so
+      # * an unauthenticated container answering `2` here is what proves that
+      # * ordering rather than assumes it. The sweep above only proves a VALID
+      # * dimension exits 3 unauthenticated; it says nothing about a dimension
+      # * that is refused for an entirely different reason before that check
+      # * would even run.
+      - |
+        PULSE_API_KEY="" /tmp/pulse breakdown city --last 7d >/dev/null 2>&1
+        [ "$?" = "2" ] || { echo "FAILED: excluded dimension did not exit 2"; exit 1; }
+        echo "ok  \`pulse breakdown city\` (an excluded dimension) exits 2, not 3"

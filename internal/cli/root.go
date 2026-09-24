@@ -101,6 +101,7 @@ func Execute() int {
 		newAuthCmd(app),
 		newSitesCmd(app),
 		newStatsCmd(app),
+		newBreakdownCmd(app),
 		newRealtimeCmd(app),
 		newExportCmd(app),
 		newUpgradeCmd(app),
