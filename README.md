@@ -42,11 +42,11 @@ macOS, Linux and Windows, amd64 and arm64. See [Verifying a release](#verifying-
 
 ```console
 $ pulse auth login
-Paste your API key (create one at Settings → Organization → API Keys):
+Paste your API key (create one in Settings, under API Keys):
 › ••••••••••••••••••••••••••••••••••••
 
 ✓ Stored key "production" (…chju) in the macOS Keychain.
-  Organization 2c1f74ec-… · all sites · expires 2026-11-05 (89 days)
+  Team 2c1f74ec-… · all sites · expires 2026-11-05 (89 days)
 
 $ pulse sites ls
   SLUG               DOMAIN             TIMEZONE         LAST EVENT

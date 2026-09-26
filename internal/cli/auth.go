@@ -34,7 +34,7 @@ func newAuthLoginCmd(app *App) *cobra.Command {
 			"The key is read from the terminal without echoing and written to the macOS\n" +
 			"Keychain, libsecret, or the Windows Credential Manager. This tool never\n" +
 			"writes a key to a file.\n\n" +
-			"Create a key at Settings → Organization → API Keys.",
+			"Create a key in Settings, under API Keys.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			key, err := readKey(app)
@@ -73,7 +73,7 @@ func newAuthLoginCmd(app *App) *cobra.Command {
 			// * strings, and the API's is the one the dashboard shows.
 			p.Success("Stored key %q (…%s) in the %s.",
 				me.Data.Key.Name, me.Data.Key.Last4, keychainName())
-			p.Note("Organization %s · %s · expires %s",
+			p.Note("Team %s · %s · expires %s",
 				me.Data.Organization.ID, scopeDescription(me.Data.Key), render.Expiry(me.Data.Key.ExpiresAt))
 
 			if id, _ := app.Config.SiteFor(app.Profile); id == "" {
@@ -136,7 +136,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 			}
 
 			rows := [][2]string{
-				{"Organization", res.Data.Organization.ID},
+				{"Team", res.Data.Organization.ID},
 				{"Key", fmt.Sprintf("%s  ·  …%s", res.Data.Key.Name, res.Data.Key.Last4)},
 				{"Expires", render.Expiry(res.Data.Key.ExpiresAt)},
 				{"Scope", scopeDescription(res.Data.Key)},
@@ -160,6 +160,14 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 	}
 }
 
+// apiKeyPrompt is what a person sees before pasting a key into a real
+// terminal.
+//
+// Kept as a named constant rather than a literal inline in readKey so a test
+// can pin the wording directly — exercising the terminal branch below would
+// mean faking a pty, which this package has no seam for.
+const apiKeyPrompt = "Paste your API key (create one in Settings, under API Keys):\n› "
+
 // readKey prompts for a key without echoing it.
 //
 // When stdin is not a terminal the key is read from the pipe instead — which is
@@ -174,7 +182,7 @@ func readKey(app *App) (string, error) {
 		return strings.TrimSpace(line), nil
 	}
 
-	fmt.Fprint(app.Printer.Err(), "Paste your API key (create one at Settings → Organization → API Keys):\n› ")
+	fmt.Fprint(app.Printer.Err(), apiKeyPrompt)
 	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(app.Printer.Err())
 	if err != nil {
