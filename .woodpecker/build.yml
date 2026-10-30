@@ -19,7 +19,7 @@ steps:
   # * the three. A compile failure there would otherwise reach a user before it
   # * reached us.
   cross-compile:
-    image: golang:1.25
+    image: golang:1.26
     backend_options:
       kubernetes:
         resources:
@@ -57,7 +57,7 @@ steps:
   # * next goreleaser. Deprecations are how goreleaser gives notice; swallowing
   # * them means the notice arrives as a broken release instead.
   goreleaser-config:
-    image: ghcr.io/goreleaser/goreleaser:v2.17.1
+    image: ghcr.io/goreleaser/goreleaser:v2.19.0
     backend_options:
       kubernetes:
         resources:
@@ -71,7 +71,7 @@ steps:
   # * release, and `go test` cannot tell you that — it never links a main. This
   # * runs the real artefact.
   smoke:
-    image: golang:1.25
+    image: golang:1.26
     depends_on: [cross-compile]
     backend_options:
       kubernetes:

@@ -148,12 +148,14 @@ homebrew_casks:
     # cask. The real fix is Apple codesigning plus notarisation, which needs a paid
     # Developer ID — that is an owner decision, not a config change, and until it is
     # made this hook is what stands between a release and a binary that cannot run.
+    # * Homebrew's declarative postflight steps (goreleaser v2.19 deprecated the
+    # * arbitrary-Ruby `install:` hook): `run` for system_command, `on_macos` for
+    # * `if OS.mac?`, {{ .StagedPath }} for #{staged_path}.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr",
-                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/pulse"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/pulse"]
           end
     commit_author:
       name: Usman Baig
