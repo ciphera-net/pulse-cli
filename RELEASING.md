@@ -71,9 +71,10 @@ run and nothing else.
 
 ## Tool pinning — one pin retired, one kept
 
-The release step runs in `ghcr.io/goreleaser/goreleaser:v2.17.1`, which already carries goreleaser,
-Go 1.26.5, git and cosign. It replaced `golang:1.25` + `go install goreleaser`, which cannot work:
-goreleaser 2.17.1 needs Go >= 1.26.5 and that image sets `GOTOOLCHAIN=local`.
+The release step runs in `ghcr.io/goreleaser/goreleaser:v2.19.0`, which already carries goreleaser,
+Go 1.27.3, git and cosign (v2.17.1 with Go 1.26.5 until v1.4.2, which moved to it because the binary
+now requires Go 1.26.10). It replaced `golang:1.25` + `go install goreleaser`, which cannot work:
+goreleaser needs a newer Go than that image, and the image sets `GOTOOLCHAIN=local`.
 
 Two deliberate pins used to sit on top of that image. Both were re-tested on **07-08-2026**. One is
 now gone; the other stays, and the tests that keep it are written out below so nobody has to
@@ -226,10 +227,14 @@ the intended answer — a locally built binary is not a release, and it should n
 pipeline. To run the whole thing locally without publishing anything:
 
 ```bash
-go install github.com/goreleaser/goreleaser/v2@v2.17.1
-goreleaser check
-goreleaser release --snapshot --clean --skip=publish,sign
+# the release pipeline's own image, so the check and the snapshot use what CI uses
+docker run --rm -v "$PWD":/src -w /src ghcr.io/goreleaser/goreleaser:v2.19.0 check
+docker run --rm -v "$PWD":/src -w /src ghcr.io/goreleaser/goreleaser:v2.19.0 \
+  release --snapshot --clean --skip=publish,sign
 ```
+
+Run it in a full clone, not a `git worktree`: a worktree's `.git` is a pointer to a path the container
+cannot see, and goreleaser needs the tags.
 
 The snapshot builds all six targets, writes the archives and checksums, and generates the Homebrew
 cask into `dist/homebrew/Casks/pulse.rb` — everything the real release does except publishing and
