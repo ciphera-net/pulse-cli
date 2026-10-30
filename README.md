@@ -38,6 +38,14 @@ macOS, Linux and Windows, amd64 and arm64. See [Verifying a release](#verifying-
 > Everything else is unchanged, Linux included — the cask carries `linux_amd64` and `linux_arm64`
 > builds and installs on Homebrew for Linux the same way the formula did.
 
+> **On Homebrew 7 or later?** Homebrew loads a cask from a third-party tap only once you trust it.
+> `brew install ciphera-net/tap/pulse` trusts the cask as it installs it. If you installed Pulse with
+> an older Homebrew and `brew upgrade` no longer offers new versions, trust it once:
+>
+> ```bash
+> brew trust --cask ciphera-net/tap/pulse
+> ```
+
 ## Getting started
 
 ```console
