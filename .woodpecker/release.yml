@@ -21,7 +21,7 @@ steps:
     # * misses standard-library fixes released in 1.26.9 and 1.26.10. No
     # * goreleaser image sits on a patched 1.26 (v2.18+ moved to 1.27), so the
     # * release binaries are built with Go 1.27.3; go.mod's 1.26.10 is the floor.
-    image: ghcr.io/goreleaser/goreleaser:v2.19.0
+    image: registry.ops.ciphera.net/mirror/ghcr.io/goreleaser/goreleaser:v2.19.0@sha256:879cfaa9bd9adf79416e34291526a80fd895809512fb01280bdedfcff13760ea
     backend_options:
       kubernetes:
         resources:
